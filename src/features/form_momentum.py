@@ -152,13 +152,21 @@ def compute_form_features(matches: pd.DataFrame,
         
         features = {}
         
-        # Rolling form (points per game) for each window
+        # Rolling form (points per game) for each window using EWMA
         for w in windows:
             recent_points = team_df["points"].tail(w)
-            features[f"recent_form_{w}"] = round(recent_points.mean(), 3)
-            
+            if len(recent_points) > 0:
+                ewma_points = recent_points.ewm(span=min(w, len(recent_points)), adjust=False).mean().iloc[-1]
+                features[f"recent_form_{w}"] = round(ewma_points, 3)
+            else:
+                features[f"recent_form_{w}"] = 1.0
+                
             recent_cs = team_df["clean_sheet"].tail(w)
-            features[f"clean_sheet_rate_{w}"] = round(recent_cs.mean(), 3)
+            if len(recent_cs) > 0:
+                ewma_cs = recent_cs.ewm(span=min(w, len(recent_cs)), adjust=False).mean().iloc[-1]
+                features[f"clean_sheet_rate_{w}"] = round(ewma_cs, 3)
+            else:
+                features[f"clean_sheet_rate_{w}"] = 0.25
 
         # Streaks
         features["win_streak"] = _compute_streak(results_list, "W")

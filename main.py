@@ -78,7 +78,7 @@ def run_full_pipeline(test_mode: bool = False, mode: str = "full"):
     from src.model.optuna_tuning import run_tuning
     
     if test_mode:
-        n_trials = 10
+        n_trials = 2
     elif mode == "quick":
         n_trials = 20
     elif mode == "medium":

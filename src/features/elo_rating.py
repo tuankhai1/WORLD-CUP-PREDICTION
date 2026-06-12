@@ -45,8 +45,10 @@ class EloRatingSystem:
         """
         if initial_ratings:
             self.ratings = dict(initial_ratings)
+            self.form_ratings = dict(initial_ratings)
         else:
             self.ratings = dict(FIFA_RANKINGS)
+            self.form_ratings = dict(FIFA_RANKINGS)
         
         # Track rating history for visualization
         self.history: list[dict] = []
@@ -57,6 +59,10 @@ class EloRatingSystem:
     def get_rating(self, team: str) -> float:
         """Get current Elo rating for a team."""
         return self.ratings.get(team, self.default_rating)
+
+    def get_form_rating(self, team: str) -> float:
+        """Get highly reactive short-term form Elo rating."""
+        return self.form_ratings.get(team, self.default_rating)
 
     def expected_result(self, rating_a: float, rating_b: float, 
                         home_advantage: float = 0.0) -> float:
@@ -155,13 +161,24 @@ class EloRatingSystem:
         k = self._match_importance_k(competition)
         mov = self._margin_of_victory_multiplier(goals_a - goals_b)
         
-        # Update ratings
+        # Update historical ratings
         delta = k * mov * (act_a - exp_a)
         new_rating_a = rating_a + delta
         new_rating_b = rating_b - delta
         
         self.ratings[team_a] = round(new_rating_a, 2)
         self.ratings[team_b] = round(new_rating_b, 2)
+        
+        # Update highly reactive Form Elo (3x K-factor)
+        form_a = self.get_form_rating(team_a)
+        form_b = self.get_form_rating(team_b)
+        form_exp_a = self.expected_result(form_a, form_b, home_adv)
+        form_delta = (k * 3.0) * mov * (act_a - form_exp_a)
+        
+        new_form_a = form_a + form_delta
+        new_form_b = form_b - form_delta
+        self.form_ratings[team_a] = round(new_form_a, 2)
+        self.form_ratings[team_b] = round(new_form_b, 2)
         
         return new_rating_a, new_rating_b
 
@@ -184,6 +201,8 @@ class EloRatingSystem:
         elo_home = []
         elo_away = []
         elo_diff = []
+        form_elo_home = []
+        form_elo_away = []
         
         for idx, row in df.iterrows():
             home = row["home_team"]
@@ -195,6 +214,11 @@ class EloRatingSystem:
             elo_home.append(r_home)
             elo_away.append(r_away)
             elo_diff.append(r_home - r_away)
+            
+            form_home = self.get_form_rating(home)
+            form_away = self.get_form_rating(away)
+            form_elo_home.append(form_home)
+            form_elo_away.append(form_away)
             
             # Update ratings if match is finished
             home_score = row.get("home_score")
@@ -227,6 +251,8 @@ class EloRatingSystem:
         df["elo_home"] = elo_home
         df["elo_away"] = elo_away
         df["elo_diff"] = elo_diff
+        df["form_elo_home"] = form_elo_home
+        df["form_elo_away"] = form_elo_away
         
         logger.info(f"Processed Elo for {len(df)} matches. "
                     f"Top 5: {sorted(self.ratings.items(), key=lambda x: -x[1])[:5]}")
@@ -236,6 +262,10 @@ class EloRatingSystem:
     def get_all_ratings(self) -> dict:
         """Get current ratings for all teams, sorted by rating."""
         return dict(sorted(self.ratings.items(), key=lambda x: -x[1]))
+
+    def get_all_form_ratings(self) -> dict:
+        """Get current form ratings for all teams."""
+        return dict(sorted(self.form_ratings.items(), key=lambda x: -x[1]))
 
     def predict_match(self, team_a: str, team_b: str, 
                       is_neutral: bool = True) -> dict:

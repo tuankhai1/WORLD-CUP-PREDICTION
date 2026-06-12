@@ -74,6 +74,7 @@ class FeaturePipeline:
         logger.info("  Computing Elo ratings...")
         matches_with_elo = self.elo_system.process_matches(matches)
         elo_ratings = self.elo_system.get_all_ratings()
+        form_elo_ratings = self.elo_system.get_all_form_ratings()
 
         # 2. Rolling xG features
         logger.info("  Computing rolling xG features...")
@@ -97,10 +98,12 @@ class FeaturePipeline:
         for team in all_teams:
             features = {}
             
-            # Elo
+            # Elo & FIFA Ranking
             features["elo_rating"] = elo_ratings.get(team, 1400.0)
+            features["form_elo_rating"] = form_elo_ratings.get(team, 1400.0)
             features["fifa_rating"] = FIFA_RANKINGS.get(team, 1400.0)
             features["elo_fifa_diff"] = features["elo_rating"] - features["fifa_rating"]
+            features["form_elo_fifa_diff"] = features["form_elo_rating"] - features["fifa_rating"]
             
             # Rolling xG — get the latest values
             if team in xg_features:
@@ -202,6 +205,7 @@ class FeaturePipeline:
 
         # Head-to-head features (can't be computed as difference)
         vector["elo_diff"] = fa.get("elo_rating", 1400) - fb.get("elo_rating", 1400)
+        vector["form_elo_diff"] = fa.get("form_elo_rating", 1400) - fb.get("form_elo_rating", 1400)
         vector["fifa_rating_diff"] = fa.get("fifa_rating", 1400) - fb.get("fifa_rating", 1400)
         
         return vector
@@ -316,6 +320,7 @@ class FeaturePipeline:
             "team_features": self.team_features,
             "feature_columns": self.feature_columns,
             "elo_ratings": self.elo_system.get_all_ratings(),
+            "form_elo_ratings": self.elo_system.get_all_form_ratings(),
             "scaler": self.scaler,
         }
         joblib.dump(state, path)
@@ -332,6 +337,7 @@ class FeaturePipeline:
         pipeline.feature_columns = state["feature_columns"]
         pipeline.scaler = state["scaler"]
         pipeline.elo_system.ratings = state["elo_ratings"]
+        pipeline.elo_system.form_ratings = state.get("form_elo_ratings", state["elo_ratings"])
         pipeline._is_fitted = True
         
         cls.FEATURE_COLUMNS = pipeline.feature_columns
