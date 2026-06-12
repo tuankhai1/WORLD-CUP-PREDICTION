@@ -90,10 +90,6 @@ class DataMerger:
             subset=["date", "home_team", "away_team"],
             keep="first",
         )
-                    how="left",
-                    suffixes=("", "_sb"),
-                )
-                logger.info("Enriched matches with StatsBomb event data")
 
         # Add confederation info
         matches["home_confederation"] = matches["home_team"].map(TEAM_TO_CONFEDERATION)

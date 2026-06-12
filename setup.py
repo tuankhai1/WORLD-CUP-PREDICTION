@@ -11,7 +11,7 @@ import sys
 import platform
 from setuptools import setup, Extension
 
-# Try to import pybind11; if not available, provide a helpful message
+# Try to import pybind11
 try:
     import pybind11
     from pybind11.setup_helpers import Pybind11Extension, build_ext
