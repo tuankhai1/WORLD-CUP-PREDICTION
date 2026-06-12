@@ -13,11 +13,6 @@ xgboost>=2.0
 lightgbm>=4.0
 optuna>=3.5
 
-# Data sources
-statsbombpy>=1.11
-requests>=2.31
-beautifulsoup4>=4.12
-lxml>=4.9
 
 # Visualization & output
 plotly>=5.18

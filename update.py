@@ -38,7 +38,7 @@ def daily_update():
     logger.info(f"{'='*60}")
     
     try:
-        from src.data_ingestion.football_data_api import FootballDataClient
+        from src.data_ingestion.github_loader import GithubDataLoader
         from src.data_ingestion.data_merger import DataMerger
         from src.features.pipeline import FeaturePipeline
         from src.model.stacking import StackedEnsemble
@@ -46,17 +46,16 @@ def daily_update():
         from src.simulation.simulator import TournamentSimulator
         from src.output.dashboard import DashboardGenerator
         from config import MC_DEFAULT_ITERATIONS
+        import pandas as pd
         
-        # 1. Fetch latest data (no cache)
-        logger.info("\n>> Fetching latest match results...")
-        client = FootballDataClient(cache_ttl_hours=0)
+        # 1. Fetch latest data
+        logger.info("\n>> Fetching latest match results from Github...")
+        gh_loader = GithubDataLoader()
+        gh_loader.fetch_data()
         
-        finished = client.get_finished_matches()
-        upcoming = client.get_upcoming_matches()
-        logger.info(f"  Finished matches: {len(finished)}")
-        logger.info(f"  Upcoming matches: {len(upcoming)}")
-        
-        client.save_raw_data()
+        # Define empty DataFrames for backwards compatibility in the simulation block
+        finished = pd.DataFrame()
+        upcoming = pd.DataFrame()
         
         # 2. Re-merge data
         logger.info("\n>> Merging data...")

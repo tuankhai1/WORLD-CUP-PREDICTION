@@ -17,9 +17,6 @@ OUTPUT_DIR = PROJECT_ROOT / "output"
 for d in [RAW_DATA_DIR, PROCESSED_DATA_DIR, CACHE_DIR, MODEL_DIR, OUTPUT_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
-FOOTBALL_DATA_API_KEY = os.environ.get("FOOTBALL_DATA_API_KEY", "")
-FOOTBALL_DATA_BASE_URL = "https://api.football-data.org/v4"
-FOOTBALL_DATA_RATE_LIMIT = 10  # calls per minute (free tier)
 
 TOURNAMENT_NAME = "2026 FIFA World Cup"
 TOURNAMENT_YEAR = 2026

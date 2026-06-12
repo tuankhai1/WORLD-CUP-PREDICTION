@@ -28,9 +28,7 @@ class DataMerger:
     into a unified dataset suitable for feature engineering.
     
     Data sources:
-    1. football-data.org: Match results, scores, tournament structure
-    2. StatsBomb: Event-level xG, pressing, passing (historical only)
-    3. FBref: Advanced team-level aggregate stats (when available)
+    1. GitHub (martj42/international_results): Comprehensive match results
     
     Output:
     - Unified match-level DataFrame with standardized team names
@@ -51,34 +49,11 @@ class DataMerger:
         """
         data = {}
         
-        # football-data.org data
-        fd_hist_path = RAW_DATA_DIR / "historical_wc_matches.parquet"
-        if fd_hist_path.exists():
-            data["fd_historical"] = pd.read_parquet(fd_hist_path)
-            logger.info(f"Loaded {len(data['fd_historical'])} historical matches (football-data)")
-
-        fd_current_path = RAW_DATA_DIR / "wc2026_matches.parquet"
-        if fd_current_path.exists():
-            data["fd_current"] = pd.read_parquet(fd_current_path)
-            logger.info(f"Loaded {len(data['fd_current'])} current matches (football-data)")
-
-        # StatsBomb data
-        sb_path = RAW_DATA_DIR / "statsbomb_historical.parquet"
-        if sb_path.exists():
-            data["statsbomb"] = pd.read_parquet(sb_path)
-            logger.info(f"Loaded {len(data['statsbomb'])} matches (StatsBomb)")
-            
         # GitHub data
         gh_path = RAW_DATA_DIR / "github_historical.parquet"
         if gh_path.exists():
             data["github"] = pd.read_parquet(gh_path)
             logger.info(f"Loaded {len(data['github'])} matches (GitHub)")
-
-        # FBref data
-        fbref_path = RAW_DATA_DIR / "fbref_advanced_stats.parquet"
-        if fbref_path.exists():
-            data["fbref"] = pd.read_parquet(fbref_path)
-            logger.info(f"Loaded FBref stats for {len(data['fbref'])} teams")
 
         if not data:
             logger.warning("No raw data files found! Run data ingestion first.")
@@ -95,28 +70,10 @@ class DataMerger:
     def _build_match_dataset(self, raw_data: dict) -> pd.DataFrame:
         """
         Build unified match dataset from all sources.
-        
-        The priority for match data:
-        1. football-data.org (most reliable for scores)
-        2. StatsBomb (enriches with xG/pressing stats where available)
         """
         all_matches = []
 
-        # 1. Historical matches from football-data.org
-        if "fd_historical" in raw_data:
-            df = raw_data["fd_historical"].copy()
-            df = self._standardize_team_names(df)
-            df["source"] = "football_data"
-            all_matches.append(df)
-
-        # 2. Current 2026 WC matches
-        if "fd_current" in raw_data:
-            df = raw_data["fd_current"].copy()
-            df = self._standardize_team_names(df)
-            df["source"] = "football_data"
-            all_matches.append(df)
-            
-        # 3. GitHub historical matches
+        # 1. GitHub historical matches
         if "github" in raw_data:
             df = raw_data["github"].copy()
             df = self._standardize_team_names(df)
@@ -133,21 +90,6 @@ class DataMerger:
             subset=["date", "home_team", "away_team"],
             keep="first",
         )
-
-        # Enrich with StatsBomb xG data where available
-        if "statsbomb" in raw_data:
-            sb = raw_data["statsbomb"].copy()
-            sb = self._standardize_team_names(sb)
-            
-            # Merge on date and teams
-            sb_cols = [c for c in sb.columns if c.startswith("home_") or c.startswith("away_")]
-            sb_cols = [c for c in sb_cols if c not in ["home_team", "away_team", "home_score", "away_score"]]
-            sb_merge = sb[["date", "home_team", "away_team"] + sb_cols].copy()
-            
-            if not sb_merge.empty:
-                matches = matches.merge(
-                    sb_merge,
-                    on=["date", "home_team", "away_team"],
                     how="left",
                     suffixes=("", "_sb"),
                 )

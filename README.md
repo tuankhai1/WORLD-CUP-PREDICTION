@@ -10,12 +10,10 @@ The system is divided into four main layers:
 
 ### 1. Data Ingestion & Processing
 
-The foundation of the prediction model relies on a multi-source historical football data pipeline.
+The foundation of the prediction model relies on a highly comprehensive historical football dataset.
 
-- **Primary Source (Results)**: The `martj42/international_results` GitHub repository, which contains a massive open-source database of over 40,000 international football results dating back to the 19th century.
-- **Secondary Source (Advanced Metrics)**: Uses the **StatsBomb API** via the `statsbombpy` package to enrich the dataset with high-fidelity, granular match events (like Expected Goals and pressing metrics).
-- **Secondary Source (Live Data/Fixtures)**: Integrates the **football-data.org API** (`src/data_ingestion/football_data_api.py`) to fetch live tournament standings, squads, or up-to-date fixture information.
-- **Processing**: The ingestion pipeline fetches and merges these sources, filters for relevant eras and tournament weights, and standardizes team names. Secondary data structures prepare the specific 2026 World Cup group matchups defined in `config.py`.
+- **Primary Source**: The model draws exclusively from the `martj42/international_results` GitHub repository. This robust, open-source database contains over 40,000 international football results dating back to the 19th century, ensuring massive historical depth without relying on external APIs that are prone to rate limits or blocking.
+- **Processing**: The ingestion pipeline fetches the latest dataset, filters for relevant eras and tournament weights, and standardizes team names to fuel the dynamic Elo engine. Secondary data structures prepare the specific 2026 World Cup group matchups defined in `config.py`.
 
 ### 2. Feature Engineering
 

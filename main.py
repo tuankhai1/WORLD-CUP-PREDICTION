@@ -42,34 +42,6 @@ def run_full_pipeline(test_mode: bool = False, mode: str = "full"):
     
     # Data Ingestion
     
-    from src.data_ingestion.football_data_api import FootballDataClient
-    from src.data_ingestion.statsbomb_loader import StatsBombLoader
-    from src.data_ingestion.fbref_scraper import FBrefScraper
-    
-    # Football-data.org
-    fd_client = FootballDataClient()
-    try:
-        fd_client.save_raw_data()
-    except Exception as e:
-        logger.warning(f"Football-data.org ingestion failed: {e}")
-        logger.info("Continuing with available data...")
-    
-    # StatsBomb
-    if not test_mode:
-        try:
-            sb_loader = StatsBombLoader()
-            sb_loader.build_historical_dataset()
-        except Exception as e:
-            logger.warning(f"StatsBomb ingestion failed: {e}")
-    
-    # FBref
-    if not test_mode:
-        try:
-            fbref = FBrefScraper(delay=5.0)
-            fbref.build_advanced_stats_dataset()
-        except Exception as e:
-            logger.warning(f"FBref scraping failed: {e}")
-            
     # GitHub
     try:
         from src.data_ingestion.github_loader import GithubDataLoader
