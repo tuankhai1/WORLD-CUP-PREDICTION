@@ -21,26 +21,24 @@ Based on our most recent end-to-end Monte Carlo simulation using the **Modern Er
 | 7 | England | **4.60%** | Massive Squad Power (1969.0) |
 | 8 | Belgium | **4.06%** | Excellent form and legacy depth |
 | 9 | Portugal | **3.78%** | Elite depth, historically strong in Europe |
-| 10| Netherlands | **2.40%** | Deep runs in recent tournaments |
+| 10 | Netherlands | **2.40%** | Deep runs in recent tournaments |
 
-### Top 10 Official Squad Power Ratings
+### Top 10 Club Form Power Ratings
 
-Calculated directly from the official 26-man rosters using Elite Depth (players in Top 5 European Leagues), International Experience (Total Caps), and Output (Total International Goals).
+Calculated by aggregating the 2025/2026 season statistics of each nation's top 15 players across the Top 5 European Leagues. Metrics weighted include Goals, Assists, Shots on Target, Tackles, Interceptions, and Points Per Match, removing legacy bias like Total Caps and International Goals.
 
-| Rank | Team | Squad Power Index | Elite Players (Top 5 Leagues) | Total Caps | Total Goals |
-|:---:|:---|:---:|:---:|:---:|:---:|
-| 1 | Argentina | **2071.5** | 20 | 1251 | 223 |
-| 2 | Switzerland | **2014.0** | 24 | 1132 | 124 |
-| 3 | Belgium | **1970.5** | 20 | 1085 | 214 |
-| 4 | England | **1969.0** | 25 | 842 | 149 |
-| 5 | Portugal | **1948.5** | 17 | 1161 | 259 |
-| 6 | Spain | **1905.5** | 26 | 743 | 117 |
-| 7 | Germany | **1882.0** | 25 | 844 | 105 |
-| 8 | Netherlands | **1836.5** | 22 | 861 | 153 |
-| 9 | France | **1801.5** | 24 | 803 | 100 |
-| 10 | Croatia | **1786.0** | 18 | 1160 | 153 |
-
-*Note: Brazil currently ranks outside the top 10 in pure Squad Power due to recent roster transitions, reflecting their reliance on legacy rather than current elite output.*
+| Rank | Team | Club Form Power | Note |
+|:---:|:---|:---:|:---|
+| 1 | France | **1919.60** | Elite depth across all positions |
+| 2 | Spain | **1892.78** | Dominant midfield playmaking stats |
+| 3 | Germany | **1712.98** | Strong attacking and defensive balance |
+| 4 | England | **1540.12** | High output forwards |
+| 5 | Brazil | **1321.60** | Reduced due to legacy transitions |
+| 6 | Netherlands | **1299.01** | Solid core |
+| 7 | Argentina | **1274.70** | Star-heavy but top-heavy |
+| 8 | Portugal | **1228.85** | Strong elite contributions |
+| 9 | Austria | **988.88** | Overperforming pressing metrics |
+| 10 | Senegal | **926.30** | Best African representation |
 
 ---
 
@@ -61,7 +59,7 @@ The foundation of the prediction model relies on a highly comprehensive historic
 A robust, custom feature pipeline transforms raw match results into powerful predictive indicators:
 
 - **Dual Elo Ratings**: A dual-system tracking both long-term historical prestige and a highly reactive 'Form Elo' (using an amplified K-factor) to mathematically measure a team's current trajectory.
-- **Squad Power Rating (Official Squads)**: The pipeline dynamically parses the official tournament squad list to compute a weighted index of squad dominance based on three metrics: Number of players in Top 5 European Leagues (Elite Depth), Total International Caps (Experience), and Total International Goals (In-Form Output).
+- **Club Form Power (2025/2026)**: The pipeline computes a weighted index of squad dominance based on the accumulated stats of each nation's players in the Top 5 European Leagues over the most recent season (Goals, Assists, Tackles, Interceptions). Legacy metrics like Total Caps have been explicitly removed to prevent bias.
 - **Exponential Sample Weighting**: During model training, an exponential decay function (with a 2-year half-life) mathematically scales the `sample_weight` of historical matches. Recent matches aggressively dictate the gradient descent, while older matches provide only underlying context.
 - **Head-to-Head Statistics**: Historical matchups between two specific nations.
 - **Rolling xG & Pressing Intensity**: Advanced metrics (where available) modeling offensive output and defensive pressure.
