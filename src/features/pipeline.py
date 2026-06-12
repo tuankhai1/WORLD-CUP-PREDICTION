@@ -120,9 +120,8 @@ class FeaturePipeline:
             features["elo_rating"] = elo_ratings.get(team, 1500.0)
             features["form_elo_rating"] = form_elo_ratings.get(team, 1500.0)
             
-            # --- LEGACY BIAS REMOVED ---
-            # Removed fifa_rating, elo_fifa_diff, form_elo_fifa_diff, and squad_power (caps/goals)
-            # We now rely EXCLUSIVELY on club_form_power for squad quality.
+            # User requested re-introduction of FIFA ratings as a minor feature
+            features["fifa_rating"] = FIFA_RANKINGS.get(team, 1500.0)
             
             features["club_form_power"] = club_form_power_map.get(team, 0.0)
             
@@ -228,8 +227,8 @@ class FeaturePipeline:
         vector["elo_diff"] = fa.get("elo_rating", 1500) - fb.get("elo_rating", 1500)
         vector["form_elo_diff"] = fa.get("form_elo_rating", 1500) - fb.get("form_elo_rating", 1500)
         
-        # --- LEGACY BIAS REMOVED ---
-        # Removed fifa_rating_diff and squad_power_diff
+        # Re-added FIFA rating difference
+        vector["fifa_rating_diff"] = fa.get("fifa_rating", 1500.0) - fb.get("fifa_rating", 1500.0)
         
         vector["club_form_power_diff"] = fa.get("club_form_power", 0.0) - fb.get("club_form_power", 0.0)
         

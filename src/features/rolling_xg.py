@@ -114,22 +114,30 @@ def compute_rolling_xg_features(matches: pd.DataFrame,
         team_matches = []
         
         for idx in df[home_mask].index:
+            opponent_elo = df.loc[idx, "elo_away"] if "elo_away" in df.columns and pd.notna(df.loc[idx, "elo_away"]) else 1500.0
+            adj_factor_for = opponent_elo / 1500.0
+            adj_factor_against = 1500.0 / opponent_elo
+            
             team_matches.append({
                 "date": df.loc[idx, "date"],
-                "xg_for": df.loc[idx, "home_xg"],
-                "xg_against": df.loc[idx, "away_xg"],
-                "goals_for": df.loc[idx, "home_score"],
-                "goals_against": df.loc[idx, "away_score"],
+                "xg_for": df.loc[idx, "home_xg"] * adj_factor_for,
+                "xg_against": df.loc[idx, "away_xg"] * adj_factor_against,
+                "goals_for": df.loc[idx, "home_score"] * adj_factor_for,
+                "goals_against": df.loc[idx, "away_score"] * adj_factor_against,
                 "match_idx": idx,
             })
         
         for idx in df[away_mask].index:
+            opponent_elo = df.loc[idx, "elo_home"] if "elo_home" in df.columns and pd.notna(df.loc[idx, "elo_home"]) else 1500.0
+            adj_factor_for = opponent_elo / 1500.0
+            adj_factor_against = 1500.0 / opponent_elo
+            
             team_matches.append({
                 "date": df.loc[idx, "date"],
-                "xg_for": df.loc[idx, "away_xg"],
-                "xg_against": df.loc[idx, "home_xg"],
-                "goals_for": df.loc[idx, "away_score"],
-                "goals_against": df.loc[idx, "home_score"],
+                "xg_for": df.loc[idx, "away_xg"] * adj_factor_for,
+                "xg_against": df.loc[idx, "home_xg"] * adj_factor_against,
+                "goals_for": df.loc[idx, "away_score"] * adj_factor_for,
+                "goals_against": df.loc[idx, "home_score"] * adj_factor_against,
                 "match_idx": idx,
             })
 
