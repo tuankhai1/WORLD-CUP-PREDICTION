@@ -230,6 +230,12 @@ class FeaturePipeline:
         # Build matchup vectors for each match
         finished = matches.dropna(subset=["home_score", "away_score"]).copy()
         
+        # --- Timeline Truncation ---
+        # Keep Elo calculations on the full history, but train only on modern matches.
+        finished["date"] = pd.to_datetime(finished["date"])
+        finished = finished[finished["date"] >= "2010-01-01"].copy()
+        logger.info(f"Truncating training data to modern era (2010+): {len(finished)} matches.")
+        
         records = []
         targets_wdl = []
         targets_gd = []

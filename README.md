@@ -12,15 +12,16 @@ The system is divided into four main layers:
 
 The foundation of the prediction model relies on a highly comprehensive historical football dataset.
 
-- **Primary Source**: The model draws exclusively from the `martj42/international_results` GitHub repository. This robust, open-source database contains over 40,000 international football results dating back to the 19th century, ensuring massive historical depth without relying on external APIs that are prone to rate limits or blocking.
+- **Primary Source**: The model draws exclusively from the `martj42/international_results` GitHub repository. This robust, open-source database contains over 40,000 international football results dating back to the 19th century, ensuring massive historical depth and a fast, reliable ingestion process without the bottlenecks of fetching from multiple live endpoints.
 - **Processing**: The ingestion pipeline fetches the latest dataset, filters for relevant eras and tournament weights, and standardizes team names to fuel the dynamic Elo engine. Secondary data structures prepare the specific 2026 World Cup group matchups defined in `config.py`.
 
 ### 2. Feature Engineering
 
 A robust, custom feature pipeline transforms raw match results into powerful predictive indicators:
 
-- **Elo Ratings**: A dynamic, historical Elo ranking system that updates after every match to provide a mathematically sound representation of team strength.
-- **Form & Momentum**: Calculates a team's recent performance (win/loss ratio, goals scored/conceded in the last N matches).
+- **Dual Elo Ratings**: A dual-system tracking both long-term historical prestige and a highly reactive 'Form Elo' (using an amplified K-factor) to mathematically measure a team's current trajectory.
+- **Form Momentum (EWMA)**: An Exponentially Weighted Moving Average (EWMA) system that calculates recent form by placing much heavier emphasis on matches played in the last 12-24 months.
+- **Current Squad Quality**: Real-time integration of absolute FIFA rankings to provide the ensemble with a proxy for current player generation quality.
 - **Head-to-Head Statistics**: Historical matchups between two specific nations.
 - **Rolling xG & Pressing Intensity**: Advanced metrics (where available) modeling offensive output and defensive pressure.
 
