@@ -71,9 +71,15 @@ class FeaturePipeline:
         """
         logger.info("Building team features...")
         
+        # --- Elo Reset (Modern Era) ---
+        # Instead of calculating from 1872, we force the Elo system to start at 2010.
+        # This completely erases "historical legacy" from past decades.
+        matches["date"] = pd.to_datetime(matches["date"])
+        matches_modern = matches[matches["date"] >= "2010-01-01"].copy()
+        
         # 1. Elo ratings — process all matches chronologically
-        logger.info("  Computing Elo ratings...")
-        matches_with_elo = self.elo_system.process_matches(matches)
+        logger.info("  Computing Elo ratings (Modern Era Reset 2010+)...")
+        matches_with_elo = self.elo_system.process_matches(matches_modern)
         elo_ratings = self.elo_system.get_all_ratings()
         form_elo_ratings = self.elo_system.get_all_form_ratings()
 
@@ -99,21 +105,26 @@ class FeaturePipeline:
         # Load Squad Power Ratings
         squad_ratings_path = RAW_DATA_DIR.parent / "processed" / "squad_ratings.parquet"
         squad_power_map = {}
+        club_form_power_map = {}
         if squad_ratings_path.exists():
             squad_df = pd.read_parquet(squad_ratings_path)
             squad_power_map = dict(zip(squad_df['team'], squad_df['squad_power_rating']))
-            logger.info("  Loaded Squad Power Ratings for feature matrix.")
+            if 'club_form_power' in squad_df.columns:
+                club_form_power_map = dict(zip(squad_df['team'], squad_df['club_form_power']))
+            logger.info("  Loaded Squad Power & Club Form Ratings for feature matrix.")
         
         for team in all_teams:
             features = {}
             
             # Elo & FIFA Ranking & Squad Power
-            features["elo_rating"] = elo_ratings.get(team, 1400.0)
-            features["form_elo_rating"] = form_elo_ratings.get(team, 1400.0)
-            features["fifa_rating"] = FIFA_RANKINGS.get(team, 1400.0)
-            features["elo_fifa_diff"] = features["elo_rating"] - features["fifa_rating"]
-            features["form_elo_fifa_diff"] = features["form_elo_rating"] - features["fifa_rating"]
-            features["squad_power"] = squad_power_map.get(team, 0.0)
+            features["elo_rating"] = elo_ratings.get(team, 1500.0)
+            features["form_elo_rating"] = form_elo_ratings.get(team, 1500.0)
+            
+            # --- LEGACY BIAS REMOVED ---
+            # Removed fifa_rating, elo_fifa_diff, form_elo_fifa_diff, and squad_power (caps/goals)
+            # We now rely EXCLUSIVELY on club_form_power for squad quality.
+            
+            features["club_form_power"] = club_form_power_map.get(team, 0.0)
             
             # Rolling xG — get the latest values
             if team in xg_features:
@@ -214,10 +225,13 @@ class FeaturePipeline:
                 vector[f"team_b_{key}"] = val_b
 
         # Head-to-head features (can't be computed as difference)
-        vector["elo_diff"] = fa.get("elo_rating", 1400) - fb.get("elo_rating", 1400)
-        vector["form_elo_diff"] = fa.get("form_elo_rating", 1400) - fb.get("form_elo_rating", 1400)
-        vector["fifa_rating_diff"] = fa.get("fifa_rating", 1400) - fb.get("fifa_rating", 1400)
-        vector["squad_power_diff"] = fa.get("squad_power", 0.0) - fb.get("squad_power", 0.0)
+        vector["elo_diff"] = fa.get("elo_rating", 1500) - fb.get("elo_rating", 1500)
+        vector["form_elo_diff"] = fa.get("form_elo_rating", 1500) - fb.get("form_elo_rating", 1500)
+        
+        # --- LEGACY BIAS REMOVED ---
+        # Removed fifa_rating_diff and squad_power_diff
+        
+        vector["club_form_power_diff"] = fa.get("club_form_power", 0.0) - fb.get("club_form_power", 0.0)
         
         return vector
 
@@ -242,10 +256,12 @@ class FeaturePipeline:
         finished = matches.dropna(subset=["home_score", "away_score"]).copy()
         
         # --- Timeline Truncation ---
-        # Keep Elo calculations on the full history, but train only on modern matches.
+        # Elo has been running since 2010. We give it 5 years to "stretch out" and settle
+        # into a stable distribution before we start using the values to train the trees.
+        # This prevents absolute scale distortion in the tree models.
         finished["date"] = pd.to_datetime(finished["date"])
-        finished = finished[finished["date"] >= "2010-01-01"].copy()
-        logger.info(f"Truncating training data to modern era (2010+): {len(finished)} matches.")
+        finished = finished[finished["date"] >= "2015-01-01"].copy()
+        logger.info(f"Truncating training data to modern ML era (2015+): {len(finished)} matches.")
         
         records = []
         targets_wdl = []
@@ -278,9 +294,9 @@ class FeaturePipeline:
             
             targets_gd.append(hs - as_)
             
-            # Calculate exponential weight
-            delta_days = (max_date - row["date"]).days
-            weight = np.exp(-lambda_decay * delta_days)
+            # --- RECENCY BIAS REMOVED ---
+            # All matches since 2015 carry equal weight.
+            weight = 1.0
             weights.append(weight)
 
         X = pd.DataFrame(records)

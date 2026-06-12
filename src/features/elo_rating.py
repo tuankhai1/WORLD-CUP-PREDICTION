@@ -47,14 +47,14 @@ class EloRatingSystem:
             self.ratings = dict(initial_ratings)
             self.form_ratings = dict(initial_ratings)
         else:
-            self.ratings = dict(FIFA_RANKINGS)
-            self.form_ratings = dict(FIFA_RANKINGS)
+            self.ratings = {}
+            self.form_ratings = {}
         
         # Track rating history for visualization
         self.history: list[dict] = []
         
-        # Default rating for unknown teams
-        self.default_rating = 1400.0
+        # Default rating for unknown teams or uninitialized
+        self.default_rating = 1500.0
 
     def get_rating(self, team: str) -> float:
         """Get current Elo rating for a team."""

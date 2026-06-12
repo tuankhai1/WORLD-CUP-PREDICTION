@@ -152,6 +152,7 @@ def run_full_pipeline(test_mode: bool = False, mode: str = "full"):
         simulation_results=results,
         match_predictions=match_predictions,
         model_metrics=ensemble.training_metrics,
+        prob_matrix=prob_matrix,
     )
     
     total_elapsed = time.time() - total_start
@@ -208,6 +209,7 @@ def run_update():
         simulation_results=results,
         match_predictions=match_predictions,
         model_metrics=ensemble.training_metrics,
+        prob_matrix=prob_matrix,
     )
     
     logger.info(f"[OK] Update complete. Dashboard: {dashboard_path}")
@@ -259,6 +261,7 @@ def run_simulate_only():
         simulation_results=results,
         match_predictions=predictor.predict_group_matches(),
         model_metrics=ensemble.training_metrics,
+        prob_matrix=prob_matrix,
     )
     
     print("\n-- Tournament Winner Probabilities:")
@@ -289,11 +292,14 @@ def run_dashboard_only():
     except Exception:
         metrics = {}
     
+    prob_matrix = predictor.generate_probability_matrix()
+    
     dashboard = DashboardGenerator()
     path = dashboard.generate(
         simulation_results=results,
         match_predictions=predictor.predict_group_matches(),
         model_metrics=metrics,
+        prob_matrix=prob_matrix,
     )
     print(f"[OK] Dashboard generated: {path}")
 

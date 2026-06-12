@@ -3,7 +3,45 @@
 ## Introduction
 
 This project is an advanced machine learning and Monte Carlo simulation pipeline built to forecast the upcoming 2026 FIFA World Cup. It utilizes historical match data to train an ensemble of gradient-boosting models (XGBoost, CatBoost, LightGBM) to predict match outcomes (Win, Draw, Loss) and expected goal differences. The predictions power a high-performance C++ Monte Carlo simulator to run millions of tournament permutations, culminating in a sleek, glassmorphic UI dashboard that visually maps out the most probable knockout bracket.
+## Current Model Results
 
+Based on our most recent end-to-end Monte Carlo simulation using the **Modern Era Reset** and **Official 2026 Squad Lists**, the tournament probabilities and intrinsic team ratings are as follows:
+
+### Top 10 Tournament Winner Probabilities
+
+| Rank | Team | Winner Probability | Note |
+|:---:|:---|:---:|:---|
+| 1 | Argentina | **18.65%** | Highest Official Squad Power |
+| 2 | Brazil | **13.94%** | Still highly ranked due to modern form |
+| 3 | Spain | **13.32%** | Highest 2010+ Modern Era Elo (2130) |
+| 4 | France | **12.92%** | Second Highest Modern Era Elo (2053) |
+| 5 | Morocco | **5.67%** | Incredible Modern Overperformance |
+| 6 | Japan | **5.55%** | Consistently high Rolling xG Metrics |
+| 7 | England | **4.60%** | Massive Squad Power (1969.0) |
+| 8 | Belgium | **4.06%** | Excellent form and legacy depth |
+| 9 | Portugal | **3.78%** | Elite depth, historically strong in Europe |
+| 10| Netherlands | **2.40%** | Deep runs in recent tournaments |
+
+### Top 10 Official Squad Power Ratings
+
+Calculated directly from the official 26-man rosters using Elite Depth (players in Top 5 European Leagues), International Experience (Total Caps), and Output (Total International Goals).
+
+| Rank | Team | Squad Power Index | Elite Players (Top 5 Leagues) | Total Caps | Total Goals |
+|:---:|:---|:---:|:---:|:---:|:---:|
+| 1 | Argentina | **2071.5** | 20 | 1251 | 223 |
+| 2 | Switzerland | **2014.0** | 24 | 1132 | 124 |
+| 3 | Belgium | **1970.5** | 20 | 1085 | 214 |
+| 4 | England | **1969.0** | 25 | 842 | 149 |
+| 5 | Portugal | **1948.5** | 17 | 1161 | 259 |
+| 6 | Spain | **1905.5** | 26 | 743 | 117 |
+| 7 | Germany | **1882.0** | 25 | 844 | 105 |
+| 8 | Netherlands | **1836.5** | 22 | 861 | 153 |
+| 9 | France | **1801.5** | 24 | 803 | 100 |
+| 10 | Croatia | **1786.0** | 18 | 1160 | 153 |
+
+*Note: Brazil currently ranks outside the top 10 in pure Squad Power due to recent roster transitions, reflecting their reliance on legacy rather than current elite output.*
+
+---
 ## Data Source & Architecture
 
 The system is divided into four main layers:
