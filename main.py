@@ -160,7 +160,7 @@ def run_update():
     """Update predictions with latest match results."""
     logger.info("[UPDATE] Updating predictions with latest results...")
     
-    from src.data_ingestion.football_data_api import FootballDataClient
+    from src.data_ingestion.github_loader import GithubDataLoader
     from src.data_ingestion.data_merger import DataMerger
     from src.features.pipeline import FeaturePipeline
     from src.model.predict import MatchPredictor
@@ -169,8 +169,9 @@ def run_update():
     from src.output.dashboard import DashboardGenerator
     
     # Fetch latest data
-    client = FootballDataClient(cache_ttl_hours=0)  # No cache for updates
-    client.save_raw_data()
+    logger.info("\n>> Fetching latest match results from Github...")
+    gh_loader = GithubDataLoader()
+    gh_loader.fetch_data()
     
     # Re-merge
     merger = DataMerger()
