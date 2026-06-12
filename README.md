@@ -3,6 +3,7 @@
 ## Introduction
 
 This project is an advanced machine learning and Monte Carlo simulation pipeline built to forecast the upcoming 2026 FIFA World Cup. It utilizes historical match data to train an ensemble of gradient-boosting models (XGBoost, CatBoost, LightGBM) to predict match outcomes (Win, Draw, Loss) and expected goal differences. The predictions power a high-performance C++ Monte Carlo simulator to run millions of tournament permutations, culminating in a sleek, glassmorphic UI dashboard that visually maps out the most probable knockout bracket.
+
 ## Current Model Results
 
 Based on our most recent end-to-end Monte Carlo simulation using the **Modern Era Reset** and **Official 2026 Squad Lists**, the tournament probabilities and intrinsic team ratings are as follows:
@@ -42,6 +43,7 @@ Calculated directly from the official 26-man rosters using Elite Depth (players 
 *Note: Brazil currently ranks outside the top 10 in pure Squad Power due to recent roster transitions, reflecting their reliance on legacy rather than current elite output.*
 
 ---
+
 ## Data Source & Architecture
 
 The system is divided into four main layers:
