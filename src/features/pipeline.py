@@ -102,16 +102,13 @@ class FeaturePipeline:
         # Merge all features for each team
         all_teams = set(ALL_TEAMS) | set(elo_ratings.keys())
         
-        # Load Squad Power Ratings
         squad_ratings_path = RAW_DATA_DIR.parent / "processed" / "squad_ratings.parquet"
-        squad_power_map = {}
         club_form_power_map = {}
         if squad_ratings_path.exists():
             squad_df = pd.read_parquet(squad_ratings_path)
-            squad_power_map = dict(zip(squad_df['team'], squad_df['squad_power_rating']))
             if 'club_form_power' in squad_df.columns:
                 club_form_power_map = dict(zip(squad_df['team'], squad_df['club_form_power']))
-            logger.info("  Loaded Squad Power & Club Form Ratings for feature matrix.")
+            logger.info("  Loaded Club Form Ratings for feature matrix.")
         
         for team in all_teams:
             features = {}
