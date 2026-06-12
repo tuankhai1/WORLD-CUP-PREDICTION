@@ -67,7 +67,7 @@ class StackedEnsemble:
         self.is_fitted = False
         self.training_metrics: dict = {}
 
-    def fit(self, X: pd.DataFrame, y_wdl: pd.Series, y_gd: pd.Series):
+    def fit(self, X: pd.DataFrame, y_wdl: pd.Series, y_gd: pd.Series, sample_weights: Optional[pd.Series] = None):
         """
         Train the full stacked ensemble.
         
@@ -80,6 +80,7 @@ class StackedEnsemble:
             X: Feature matrix
             y_wdl: Win/Draw/Loss target (0, 1, 2)
             y_gd: Goal differential target
+            sample_weights: Exponential decay weights prioritizing recent matches
         """
         logger.info("=" * 60)
         logger.info("Training Stacked Ensemble")
@@ -91,7 +92,7 @@ class StackedEnsemble:
         
         for model in self.base_models:
             logger.info(f"\nTraining {model.name}...")
-            oof_proba, oof_gd = model.get_oof_predictions(X, y_wdl, y_gd)
+            oof_proba, oof_gd = model.get_oof_predictions(X, y_wdl, y_gd, sample_weights=sample_weights)
             oof_probas.append(oof_proba)
             oof_gds.append(oof_gd)
             
@@ -124,15 +125,22 @@ class StackedEnsemble:
 
         # Step 3: Train meta-learners
         logger.info("Training meta-learner (Logistic Regression)...")
-        self.meta_clf.fit(meta_features_valid, y_wdl_valid)
-        self.meta_reg.fit(meta_features_valid, y_gd_valid)
+        # Ensure valid_mask handles sample weights
+        weights_valid = sample_weights[valid_mask].reset_index(drop=True) if sample_weights is not None else None
+        
+        fit_params = {}
+        if weights_valid is not None:
+            fit_params['sample_weight'] = weights_valid
+            
+        self.meta_clf.fit(meta_features_valid, y_wdl_valid, **fit_params)
+        self.meta_reg.fit(meta_features_valid, y_gd_valid, **fit_params)
         
         # Step 4: Calibrate
         logger.info("Calibrating probabilities (Platt scaling)...")
         self.calibrated_meta = CalibratedClassifierCV(
             self.meta_clf, method="sigmoid", cv=3
         )
-        self.calibrated_meta.fit(meta_features_valid, y_wdl_valid)
+        self.calibrated_meta.fit(meta_features_valid, y_wdl_valid, **fit_params)
 
         # Evaluate stacked model
         meta_proba = self.calibrated_meta.predict_proba(meta_features_valid)

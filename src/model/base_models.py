@@ -31,7 +31,7 @@ class BaseModelWrapper:
         self.reg_model = None    # Goal diff regressor
         self.is_fitted = False
     
-    def fit(self, X: pd.DataFrame, y_wdl: pd.Series, y_gd: pd.Series):
+    def fit(self, X: pd.DataFrame, y_wdl: pd.Series, y_gd: pd.Series, sample_weights: Optional[pd.Series] = None):
         raise NotImplementedError
     
     def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
@@ -43,7 +43,8 @@ class BaseModelWrapper:
         raise NotImplementedError
     
     def get_oof_predictions(self, X: pd.DataFrame, y_wdl: pd.Series, 
-                             y_gd: pd.Series, n_folds: int = OPTUNA_CV_FOLDS
+                             y_gd: pd.Series, n_folds: int = OPTUNA_CV_FOLDS,
+                             sample_weights: Optional[pd.Series] = None
                              ) -> tuple[np.ndarray, np.ndarray]:
         """
         Generate out-of-fold predictions for stacking.
@@ -83,18 +84,23 @@ class CatBoostWrapper(BaseModelWrapper):
             "thread_count": -1,
         }
     
-    def fit(self, X: pd.DataFrame, y_wdl: pd.Series, y_gd: pd.Series):
+    def fit(self, X: pd.DataFrame, y_wdl: pd.Series, y_gd: pd.Series, sample_weights: Optional[pd.Series] = None):
         from catboost import CatBoostClassifier, CatBoostRegressor
         
+        # Determine weight argument depending on whether sample_weights is None
+        fit_kwargs = {}
+        if sample_weights is not None:
+            fit_kwargs['sample_weight'] = sample_weights
+
         clf_params = {**self._default_params, **self.params}
         self.clf_model = CatBoostClassifier(**clf_params)
-        self.clf_model.fit(X, y_wdl, verbose=0)
+        self.clf_model.fit(X, y_wdl, verbose=0, **fit_kwargs)
         
         reg_params = {k: v for k, v in clf_params.items() 
                       if k not in ["loss_function", "classes_count"]}
         reg_params["loss_function"] = "RMSE"
         self.reg_model = CatBoostRegressor(**reg_params)
-        self.reg_model.fit(X, y_gd, verbose=0)
+        self.reg_model.fit(X, y_gd, verbose=0, **fit_kwargs)
         
         self.is_fitted = True
         logger.info(f"CatBoost fitted on {len(X)} samples")
@@ -106,7 +112,8 @@ class CatBoostWrapper(BaseModelWrapper):
         return self.reg_model.predict(X)
     
     def get_oof_predictions(self, X: pd.DataFrame, y_wdl: pd.Series, 
-                             y_gd: pd.Series, n_folds: int = OPTUNA_CV_FOLDS
+                             y_gd: pd.Series, n_folds: int = OPTUNA_CV_FOLDS,
+                             sample_weights: Optional[pd.Series] = None
                              ) -> tuple[np.ndarray, np.ndarray]:
         from catboost import CatBoostClassifier, CatBoostRegressor
         
@@ -121,10 +128,15 @@ class CatBoostWrapper(BaseModelWrapper):
             y_wdl_train, y_wdl_val = y_wdl.iloc[train_idx], y_wdl.iloc[val_idx]
             y_gd_train = y_gd.iloc[train_idx]
             
+            
             # Classification
             clf = CatBoostClassifier(**clf_params)
+            fit_kwargs = {}
+            if sample_weights is not None:
+                fit_kwargs['sample_weight'] = sample_weights.iloc[train_idx]
+                
             clf.fit(X_train, y_wdl_train, eval_set=(X_val, y_wdl_val),
-                    early_stopping_rounds=50, verbose=0)
+                    early_stopping_rounds=50, verbose=0, **fit_kwargs)
             oof_proba[val_idx] = clf.predict_proba(X_val)
             
             # Regression
@@ -132,11 +144,11 @@ class CatBoostWrapper(BaseModelWrapper):
                           if k not in ["loss_function", "classes_count"]}
             reg_params["loss_function"] = "RMSE"
             reg = CatBoostRegressor(**reg_params)
-            reg.fit(X_train, y_gd_train, verbose=0)
+            reg.fit(X_train, y_gd_train, verbose=0, **fit_kwargs)
             oof_gd[val_idx] = reg.predict(X_val)
         
         # Train final model on all data
-        self.fit(X, y_wdl, y_gd)
+        self.fit(X, y_wdl, y_gd, sample_weights=sample_weights)
         
         return oof_proba, oof_gd
 
@@ -167,18 +179,22 @@ class XGBoostWrapper(BaseModelWrapper):
             "n_jobs": -1,
         }
     
-    def fit(self, X: pd.DataFrame, y_wdl: pd.Series, y_gd: pd.Series):
+    def fit(self, X: pd.DataFrame, y_wdl: pd.Series, y_gd: pd.Series, sample_weights: Optional[pd.Series] = None):
         from xgboost import XGBClassifier, XGBRegressor
         
+        fit_kwargs = {}
+        if sample_weights is not None:
+            fit_kwargs['sample_weight'] = sample_weights
+            
         clf_params = {**self._default_params, **self.params}
         self.clf_model = XGBClassifier(**clf_params)
-        self.clf_model.fit(X, y_wdl, verbose=False)
+        self.clf_model.fit(X, y_wdl, verbose=False, **fit_kwargs)
         
         reg_params = {k: v for k, v in clf_params.items() 
                       if k not in ["objective", "num_class"]}
         reg_params["objective"] = "reg:squarederror"
         self.reg_model = XGBRegressor(**reg_params)
-        self.reg_model.fit(X, y_gd, verbose=False)
+        self.reg_model.fit(X, y_gd, verbose=False, **fit_kwargs)
         
         self.is_fitted = True
         logger.info(f"XGBoost fitted on {len(X)} samples")
@@ -190,7 +206,8 @@ class XGBoostWrapper(BaseModelWrapper):
         return self.reg_model.predict(X)
     
     def get_oof_predictions(self, X: pd.DataFrame, y_wdl: pd.Series, 
-                             y_gd: pd.Series, n_folds: int = OPTUNA_CV_FOLDS
+                             y_gd: pd.Series, n_folds: int = OPTUNA_CV_FOLDS,
+                             sample_weights: Optional[pd.Series] = None
                              ) -> tuple[np.ndarray, np.ndarray]:
         from xgboost import XGBClassifier, XGBRegressor
         
@@ -206,17 +223,21 @@ class XGBoostWrapper(BaseModelWrapper):
             y_gd_train = y_gd.iloc[train_idx]
             
             clf = XGBClassifier(**clf_params)
-            clf.fit(X_train, y_wdl_train, verbose=False)
+            fit_kwargs = {}
+            if sample_weights is not None:
+                fit_kwargs['sample_weight'] = sample_weights.iloc[train_idx]
+                
+            clf.fit(X_train, y_wdl_train, verbose=False, **fit_kwargs)
             oof_proba[val_idx] = clf.predict_proba(X_val)
             
             reg_params = {k: v for k, v in clf_params.items() 
                           if k not in ["objective", "num_class"]}
             reg_params["objective"] = "reg:squarederror"
             reg = XGBRegressor(**reg_params)
-            reg.fit(X_train, y_gd_train, verbose=False)
+            reg.fit(X_train, y_gd_train, verbose=False, **fit_kwargs)
             oof_gd[val_idx] = reg.predict(X_val)
         
-        self.fit(X, y_wdl, y_gd)
+        self.fit(X, y_wdl, y_gd, sample_weights=sample_weights)
         return oof_proba, oof_gd
 
     def feature_importance(self) -> pd.Series:
@@ -248,18 +269,22 @@ class LightGBMWrapper(BaseModelWrapper):
             "n_jobs": -1,
         }
     
-    def fit(self, X: pd.DataFrame, y_wdl: pd.Series, y_gd: pd.Series):
+    def fit(self, X: pd.DataFrame, y_wdl: pd.Series, y_gd: pd.Series, sample_weights: Optional[pd.Series] = None):
         from lightgbm import LGBMClassifier, LGBMRegressor
         
+        fit_kwargs = {}
+        if sample_weights is not None:
+            fit_kwargs['sample_weight'] = sample_weights
+            
         clf_params = {**self._default_params, **self.params}
         self.clf_model = LGBMClassifier(**clf_params)
-        self.clf_model.fit(X, y_wdl)
+        self.clf_model.fit(X, y_wdl, **fit_kwargs)
         
         reg_params = {k: v for k, v in clf_params.items() 
                       if k not in ["objective", "num_class"]}
         reg_params["objective"] = "regression"
         self.reg_model = LGBMRegressor(**reg_params)
-        self.reg_model.fit(X, y_gd)
+        self.reg_model.fit(X, y_gd, **fit_kwargs)
         
         self.is_fitted = True
         logger.info(f"LightGBM fitted on {len(X)} samples")
@@ -271,7 +296,8 @@ class LightGBMWrapper(BaseModelWrapper):
         return self.reg_model.predict(X)
     
     def get_oof_predictions(self, X: pd.DataFrame, y_wdl: pd.Series, 
-                             y_gd: pd.Series, n_folds: int = OPTUNA_CV_FOLDS
+                             y_gd: pd.Series, n_folds: int = OPTUNA_CV_FOLDS,
+                             sample_weights: Optional[pd.Series] = None
                              ) -> tuple[np.ndarray, np.ndarray]:
         from lightgbm import LGBMClassifier, LGBMRegressor
         
@@ -287,17 +313,21 @@ class LightGBMWrapper(BaseModelWrapper):
             y_gd_train = y_gd.iloc[train_idx]
             
             clf = LGBMClassifier(**clf_params)
-            clf.fit(X_train, y_wdl_train)
+            fit_kwargs = {}
+            if sample_weights is not None:
+                fit_kwargs['sample_weight'] = sample_weights.iloc[train_idx]
+                
+            clf.fit(X_train, y_wdl_train, **fit_kwargs)
             oof_proba[val_idx] = clf.predict_proba(X_val)
             
             reg_params = {k: v for k, v in clf_params.items() 
                           if k not in ["objective", "num_class"]}
             reg_params["objective"] = "regression"
             reg = LGBMRegressor(**reg_params)
-            reg.fit(X_train, y_gd_train)
+            reg.fit(X_train, y_gd_train, **fit_kwargs)
             oof_gd[val_idx] = reg.predict(X_val)
         
-        self.fit(X, y_wdl, y_gd)
+        self.fit(X, y_wdl, y_gd, sample_weights=sample_weights)
         return oof_proba, oof_gd
 
     def feature_importance(self) -> pd.Series:

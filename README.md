@@ -13,15 +13,16 @@ The system is divided into four main layers:
 The foundation of the prediction model relies on a highly comprehensive historical football dataset.
 
 - **Primary Source**: The model draws exclusively from the `martj42/international_results` GitHub repository. This robust, open-source database contains over 40,000 international football results dating back to the 19th century, ensuring massive historical depth and a fast, reliable ingestion process without the bottlenecks of fetching from multiple live endpoints.
-- **Processing**: The ingestion pipeline fetches the latest dataset, filters for relevant eras and tournament weights, and standardizes team names to fuel the dynamic Elo engine. Secondary data structures prepare the specific 2026 World Cup group matchups defined in `config.py`.
+- **Processing (Timeline Truncation)**: The ingestion pipeline fetches the full dataset to establish stable Elo rating baselines, but explicitly truncates the machine learning training matrix to matches played from **2010 onwards**. This strictly limits the model to predicting on modern football trends, eliminating the bias of "historical ghost prestige" from decades past.
+- **Official Squad Lists (PDF Extraction)**: The system utilizes `pdfplumber` to scrape the official FIFA 2026 World Cup 26-man squad list PDF. This gives the model the absolute ground-truth roster of players traveling to the tournament.
 
 ### 2. Feature Engineering
 
 A robust, custom feature pipeline transforms raw match results into powerful predictive indicators:
 
 - **Dual Elo Ratings**: A dual-system tracking both long-term historical prestige and a highly reactive 'Form Elo' (using an amplified K-factor) to mathematically measure a team's current trajectory.
-- **Form Momentum (EWMA)**: An Exponentially Weighted Moving Average (EWMA) system that calculates recent form by placing much heavier emphasis on matches played in the last 12-24 months.
-- **Current Squad Quality**: Real-time integration of absolute FIFA rankings to provide the ensemble with a proxy for current player generation quality.
+- **Squad Power Rating (Official Squads)**: The pipeline dynamically parses the official tournament squad list to compute a weighted index of squad dominance based on three metrics: Number of players in Top 5 European Leagues (Elite Depth), Total International Caps (Experience), and Total International Goals (In-Form Output).
+- **Exponential Sample Weighting**: During model training, an exponential decay function (with a 2-year half-life) mathematically scales the `sample_weight` of historical matches. Recent matches aggressively dictate the gradient descent, while older matches provide only underlying context.
 - **Head-to-Head Statistics**: Historical matchups between two specific nations.
 - **Rolling xG & Pressing Intensity**: Advanced metrics (where available) modeling offensive output and defensive pressure.
 

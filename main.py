@@ -64,12 +64,20 @@ def run_full_pipeline(test_mode: bool = False, mode: str = "full"):
     logger.info(f"Total matches: {len(matches_df)}")
     logger.info(f"Teams with stats: {len(team_stats_df)}")
     
+    # Process Player Stats for Squad Power Ratings
+    try:
+        from src.data_ingestion.player_stats_loader import PlayerStatsLoader
+        player_loader = PlayerStatsLoader()
+        player_loader.load_and_aggregate()
+    except Exception as e:
+        logger.warning(f"Player stats loading failed: {e}")
+    
     # Feature Engineering
     
     from src.features.pipeline import FeaturePipeline
     
     pipeline = FeaturePipeline()
-    X, y_wdl, y_gd = pipeline.build_training_matrix(matches_df, team_stats_df)
+    X, y_wdl, y_gd, sample_weights = pipeline.build_training_matrix(matches_df, team_stats_df)
     
     logger.info(f"Feature matrix: {X.shape}")
     
@@ -97,7 +105,7 @@ def run_full_pipeline(test_mode: bool = False, mode: str = "full"):
     from src.model.stacking import StackedEnsemble
     
     ensemble = StackedEnsemble(base_params=best_params)
-    ensemble.fit(X, y_wdl, y_gd)
+    ensemble.fit(X, y_wdl, y_gd, sample_weights=sample_weights)
     ensemble.save()
     pipeline.save()
     

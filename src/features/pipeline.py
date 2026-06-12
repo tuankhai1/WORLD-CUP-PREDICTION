@@ -24,6 +24,7 @@ from config import (
     TARGET_GD,
     RANDOM_SEED,
 )
+from config import RAW_DATA_DIR
 from src.features.rolling_xg import compute_rolling_xg_features, compute_match_xg
 from src.features.pressing_intensity import compute_pressing_features
 from src.features.elo_rating import EloRatingSystem
@@ -95,15 +96,24 @@ class FeaturePipeline:
         # Merge all features for each team
         all_teams = set(ALL_TEAMS) | set(elo_ratings.keys())
         
+        # Load Squad Power Ratings
+        squad_ratings_path = RAW_DATA_DIR.parent / "processed" / "squad_ratings.parquet"
+        squad_power_map = {}
+        if squad_ratings_path.exists():
+            squad_df = pd.read_parquet(squad_ratings_path)
+            squad_power_map = dict(zip(squad_df['team'], squad_df['squad_power_rating']))
+            logger.info("  Loaded Squad Power Ratings for feature matrix.")
+        
         for team in all_teams:
             features = {}
             
-            # Elo & FIFA Ranking
+            # Elo & FIFA Ranking & Squad Power
             features["elo_rating"] = elo_ratings.get(team, 1400.0)
             features["form_elo_rating"] = form_elo_ratings.get(team, 1400.0)
             features["fifa_rating"] = FIFA_RANKINGS.get(team, 1400.0)
             features["elo_fifa_diff"] = features["elo_rating"] - features["fifa_rating"]
             features["form_elo_fifa_diff"] = features["form_elo_rating"] - features["fifa_rating"]
+            features["squad_power"] = squad_power_map.get(team, 0.0)
             
             # Rolling xG — get the latest values
             if team in xg_features:
@@ -207,6 +217,7 @@ class FeaturePipeline:
         vector["elo_diff"] = fa.get("elo_rating", 1400) - fb.get("elo_rating", 1400)
         vector["form_elo_diff"] = fa.get("form_elo_rating", 1400) - fb.get("form_elo_rating", 1400)
         vector["fifa_rating_diff"] = fa.get("fifa_rating", 1400) - fb.get("fifa_rating", 1400)
+        vector["squad_power_diff"] = fa.get("squad_power", 0.0) - fb.get("squad_power", 0.0)
         
         return vector
 
@@ -220,7 +231,7 @@ class FeaturePipeline:
             team_stats: Team statistics DataFrame
             
         Returns:
-            Tuple of (X features, y_wdl target, y_gd target)
+            Tuple of (X features, y_wdl target, y_gd target, sample_weights)
         """
         logger.info("Building training feature matrix...")
         
@@ -239,6 +250,12 @@ class FeaturePipeline:
         records = []
         targets_wdl = []
         targets_gd = []
+        weights = []
+        
+        # Calculate max date for decay
+        max_date = finished["date"].max()
+        half_life_days = 730  # 2 years
+        lambda_decay = np.log(2) / half_life_days
         
         for _, row in finished.iterrows():
             home = row["home_team"]
@@ -260,10 +277,16 @@ class FeaturePipeline:
                 targets_wdl.append(0)  # Loss
             
             targets_gd.append(hs - as_)
+            
+            # Calculate exponential weight
+            delta_days = (max_date - row["date"]).days
+            weight = np.exp(-lambda_decay * delta_days)
+            weights.append(weight)
 
         X = pd.DataFrame(records)
         y_wdl = pd.Series(targets_wdl, name=TARGET_WDL)
         y_gd = pd.Series(targets_gd, name=TARGET_GD, dtype=float)
+        sample_weights = pd.Series(weights, name="sample_weight", dtype=float)
         
         # Store feature columns
         self.feature_columns = list(X.columns)
@@ -286,7 +309,7 @@ class FeaturePipeline:
         )
         
         self._is_fitted = True
-        return X, y_wdl, y_gd
+        return X, y_wdl, y_gd, sample_weights
 
     def predict_matchup(self, team_a: str, team_b: str) -> Optional[pd.DataFrame]:
         """
