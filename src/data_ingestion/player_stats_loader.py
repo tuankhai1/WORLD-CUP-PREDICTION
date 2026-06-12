@@ -137,12 +137,8 @@ class PlayerStatsLoader:
 
             agg_df = pd.DataFrame(teams_data)
             
-            # Add Squad Power Rating
-            agg_df['squad_power_rating'] = (
-                (agg_df['elite_players'] * 50.0) +
-                (agg_df['total_caps'] * 0.5) +
-                (agg_df['total_international_goals'] * 2.0)
-            )
+            # Note: Legacy squad_power_rating using total_caps and total_international_goals 
+            # has been completely removed to prevent historical bias favoring older players.
             
             # Add Club Form Power
             agg_df['club_form_power'] = agg_df['team_code'].map(club_form_map).fillna(0)
