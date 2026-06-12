@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Project specifics
+data/
+models/
+output/
+catboost_info/
+build/
+*.log
+
+# IDEs
+.vscode/
+.idea/
