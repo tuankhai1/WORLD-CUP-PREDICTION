@@ -3,7 +3,7 @@ Defines objective functions for each base model (CatBoost, XGBoost, LightGBM).
 """
 
 import logging
-from typing import Callable
+
 
 import numpy as np
 import pandas as pd

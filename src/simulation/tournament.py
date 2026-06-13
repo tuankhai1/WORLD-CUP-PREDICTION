@@ -8,7 +8,7 @@ from typing import Optional
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from config import GROUPS, ALL_TEAMS, NUM_GROUPS, TEAMS_PER_GROUP, THIRD_PLACE_ADVANCE
+from config import GROUPS, ALL_TEAMS, NUM_GROUPS
 
 logger = logging.getLogger(__name__)
 
@@ -82,34 +82,6 @@ class TournamentStructure:
         }
         logger.info(f"Locked result: {team_a} {score_a}-{score_b} {team_b}")
 
-    def get_group_matches(self) -> list[tuple[str, str, str]]:
-        """
-        Get all group stage matches.
-        
-        Returns:
-            List of (team_a, team_b, group_name) tuples
-        """
-        matches = []
-        for group_name, teams in GROUPS.items():
-            for i in range(len(teams)):
-                for j in range(i + 1, len(teams)):
-                    matches.append((teams[i], teams[j], group_name))
-        return matches
-
-    def get_all_possible_matchups(self) -> list[tuple[str, str]]:
-        """
-        Get all possible matchups between tournament teams.
-        
-        Returns:
-            List of (team_a, team_b) tuples for every pair
-        """
-        teams = sorted(ALL_TEAMS)
-        matchups = []
-        for i in range(len(teams)):
-            for j in range(i + 1, len(teams)):
-                matchups.append((teams[i], teams[j]))
-        return matchups
-
     def format_bracket_results(self, raw_results: dict) -> dict:
         """
         Convert raw simulation results (team_id → probabilities) 
@@ -138,22 +110,3 @@ class TournamentStructure:
 
         return formatted
 
-    def get_group_for_team(self, team_name: str) -> Optional[str]:
-        """Get the group letter for a team."""
-        from config import TEAM_TO_GROUP
-        return TEAM_TO_GROUP.get(team_name)
-
-    def summary(self) -> str:
-        """Print tournament structure summary."""
-        lines = [
-            f"2026 FIFA World Cup — {len(ALL_TEAMS)} teams, {NUM_GROUPS} groups",
-            "",
-        ]
-        for group_name in sorted(GROUPS.keys()):
-            teams = GROUPS[group_name]
-            lines.append(f"  Group {group_name}: {', '.join(teams)}")
-        
-        if self.locked_results:
-            lines.append(f"\n  Locked results: {len(self.locked_results)} matches")
-        
-        return "\n".join(lines)

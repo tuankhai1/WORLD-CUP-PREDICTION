@@ -15,7 +15,6 @@ from config import (
     FIFA_RANKINGS,
     ELO_K_FACTORS,
     ELO_HOME_ADVANTAGE,
-    ELO_NEUTRAL_VENUE_FACTOR,
     ELO_MOV_CAP,
 )
 

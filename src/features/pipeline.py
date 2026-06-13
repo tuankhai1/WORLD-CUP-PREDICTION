@@ -29,7 +29,7 @@ from src.features.rolling_xg import compute_rolling_xg_features, compute_match_x
 from src.features.pressing_intensity import compute_pressing_features
 from src.features.elo_rating import EloRatingSystem
 from src.features.form_momentum import compute_form_features
-from src.features.encoding import compute_encoding_features, compute_team_level_encodings
+from src.features.encoding import compute_team_level_encodings
 
 logger = logging.getLogger(__name__)
 
@@ -46,16 +46,12 @@ class FeaturePipeline:
     predict(A, B) and predict(B, A) consistently.
     """
 
-    # Feature columns output by the pipeline
-    FEATURE_COLUMNS = []  # Populated during build
-
     def __init__(self):
         """Initialize the pipeline."""
         self.elo_system = EloRatingSystem()
         self.scaler = StandardScaler()
         self.team_features: dict = {}  # team -> {feature_name: value}
         self.feature_columns: list[str] = []
-        self._is_fitted = False
 
     def build_team_features(self, matches: pd.DataFrame, 
                              team_stats: pd.DataFrame) -> dict:
@@ -264,11 +260,6 @@ class FeaturePipeline:
         targets_gd = []
         weights = []
         
-        # Calculate max date for decay
-        max_date = finished["date"].max()
-        half_life_days = 730  # 2 years
-        lambda_decay = np.log(2) / half_life_days
-        
         for _, row in finished.iterrows():
             home = row["home_team"]
             away = row["away_team"]
@@ -302,7 +293,6 @@ class FeaturePipeline:
         
         # Store feature columns
         self.feature_columns = list(X.columns)
-        FeaturePipeline.FEATURE_COLUMNS = self.feature_columns
         
         # Handle any NaN/inf
         X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
@@ -320,7 +310,6 @@ class FeaturePipeline:
             MODEL_DIR / "feature_columns.csv", index=False
         )
         
-        self._is_fitted = True
         return X, y_wdl, y_gd, sample_weights
 
     def predict_matchup(self, team_a: str, team_b: str) -> Optional[pd.DataFrame]:
@@ -379,8 +368,6 @@ class FeaturePipeline:
         pipeline.scaler = state["scaler"]
         pipeline.elo_system.ratings = state["elo_ratings"]
         pipeline.elo_system.form_ratings = state.get("form_elo_ratings", state["elo_ratings"])
-        pipeline._is_fitted = True
         
-        cls.FEATURE_COLUMNS = pipeline.feature_columns
         logger.info(f"Pipeline loaded from {path}")
         return pipeline

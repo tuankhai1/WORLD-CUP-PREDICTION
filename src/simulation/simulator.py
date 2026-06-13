@@ -168,7 +168,7 @@ class TournamentSimulator:
             for team in teams
         }
 
-        for iteration in range(num_iterations):
+        for _ in range(num_iterations):
             # Simulate group stage
             all_qualifiers = []
             all_third = []
@@ -239,7 +239,7 @@ class TournamentSimulator:
             
             round_names = ["r16", "qf", "sf", "final"]
             
-            for rnd_idx, rnd_name in enumerate(round_names):
+            for _, rnd_name in enumerate(round_names):
                 if len(current_round) < 2:
                     break
                     
@@ -387,25 +387,3 @@ class TournamentSimulator:
 
         return group_probs
 
-    def save_results(self, path: Optional[Path] = None):
-        """Save simulation results to JSON."""
-        path = path or OUTPUT_DIR / "simulation_results.json"
-        
-        output = {
-            "results": self.results,
-            "winner_rankings": self.get_winner_rankings()[:10],
-            "group_advancement": self.get_group_advancement_probs(),
-            "iterations": MC_DEFAULT_ITERATIONS,
-        }
-        
-        path.write_text(json.dumps(output, indent=2), encoding="utf-8")
-        logger.info(f"Simulation results saved to {path}")
-
-    def load_results(self, path: Optional[Path] = None) -> dict:
-        """Load previously saved simulation results."""
-        path = path or OUTPUT_DIR / "simulation_results.json"
-        if path.exists():
-            data = json.loads(path.read_text(encoding="utf-8"))
-            self.results = data.get("results", {})
-            return self.results
-        return {}

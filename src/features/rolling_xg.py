@@ -61,7 +61,6 @@ def compute_match_xg(matches: pd.DataFrame) -> pd.DataFrame:
 
     # Fill missing xG with estimates from goals
     mask_home = df["home_xg"].isna()
-    mask_away = df["away_xg"].isna()
     
     if mask_home.any():
         for idx in df[mask_home].index:

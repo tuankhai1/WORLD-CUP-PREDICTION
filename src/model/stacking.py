@@ -220,34 +220,6 @@ class StackedEnsemble:
             "expected_goal_diff": float(result["goal_diff"][0]),
         }
 
-    def feature_importance_report(self) -> pd.DataFrame:
-        """
-        Aggregate feature importance across all base models.
-        
-        Returns:
-            DataFrame with feature importance from each model and the average.
-        """
-        importances = {}
-        for model in self.base_models:
-            imp = model.feature_importance()
-            if not imp.empty:
-                importances[model.name] = imp
-        
-        if not importances:
-            return pd.DataFrame()
-        
-        df = pd.DataFrame(importances)
-        # Normalize each column to [0, 1]
-        for col in df.columns:
-            max_val = df[col].max()
-            if max_val > 0:
-                df[col] = df[col] / max_val
-        
-        df["average"] = df.mean(axis=1)
-        df = df.sort_values("average", ascending=False)
-        
-        return df
-
     def save(self, path: Optional[Path] = None):
         """Save the complete ensemble to disk."""
         path = path or MODEL_DIR / "stacked_ensemble.joblib"
@@ -293,9 +265,3 @@ class StackedEnsemble:
         ensemble.is_fitted = True
         logger.info(f"Stacked ensemble loaded from {path}")
         return ensemble
-
-    def calibration_report(self):
-        """Print a summary of model calibration and training metrics."""
-        logger.info("\n=== Calibration Report ===")
-        for key, value in sorted(self.training_metrics.items()):
-            logger.info(f"  {key}: {value:.4f}")
