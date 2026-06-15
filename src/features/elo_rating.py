@@ -16,6 +16,9 @@ from config import (
     ELO_K_FACTORS,
     ELO_HOME_ADVANTAGE,
     ELO_MOV_CAP,
+    ELO_HALF_LIFE_DAYS,
+    FORM_ELO_HALF_LIFE_DAYS,
+    FORM_ELO_K_MULTIPLIER,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,6 +57,8 @@ class EloRatingSystem:
         
         # Default rating for unknown teams or uninitialized
         self.default_rating = 1500.0
+        self.last_played: dict[str, pd.Timestamp] = {}
+        self.form_last_played: dict[str, pd.Timestamp] = {}
 
     def get_rating(self, team: str) -> float:
         """Get current Elo rating for a team."""
@@ -119,11 +124,37 @@ class EloRatingSystem:
         else:
             return 0.0
 
+    def _decay_rating(self, rating: float, elapsed_days: int, half_life_days: int) -> float:
+        """Decay a rating exponentially back toward the neutral baseline."""
+        if elapsed_days <= 0:
+            return rating
+        decay = np.exp(-np.log(2) * elapsed_days / half_life_days)
+        return self.default_rating + (rating - self.default_rating) * decay
+
+    def _apply_time_decay(self, team: str, match_date: Optional[pd.Timestamp]) -> None:
+        """Apply long/form Elo inactivity decay immediately before a new match."""
+        if match_date is None or pd.isna(match_date):
+            return
+        match_date = pd.Timestamp(match_date)
+        if team in self.last_played:
+            elapsed_days = max((match_date - self.last_played[team]).days, 0)
+            self.ratings[team] = round(
+                self._decay_rating(self.get_rating(team), elapsed_days, ELO_HALF_LIFE_DAYS), 2
+            )
+        if team in self.form_last_played:
+            elapsed_days = max((match_date - self.form_last_played[team]).days, 0)
+            self.form_ratings[team] = round(
+                self._decay_rating(self.get_form_rating(team), elapsed_days, FORM_ELO_HALF_LIFE_DAYS), 2
+            )
+        self.last_played[team] = match_date
+        self.form_last_played[team] = match_date
+
     def update(self, team_a: str, team_b: str, 
                goals_a: int, goals_b: int,
                competition: str = "friendly",
                is_neutral: bool = True,
-               home_team: Optional[str] = None) -> tuple[float, float]:
+               home_team: Optional[str] = None,
+               match_date: Optional[pd.Timestamp] = None) -> tuple[float, float]:
         """
         Update Elo ratings based on a match result.
         
@@ -139,6 +170,9 @@ class EloRatingSystem:
         Returns:
             Tuple of (new_rating_a, new_rating_b)
         """
+        self._apply_time_decay(team_a, match_date)
+        self._apply_time_decay(team_b, match_date)
+
         rating_a = self.get_rating(team_a)
         rating_b = self.get_rating(team_b)
         
@@ -172,7 +206,7 @@ class EloRatingSystem:
         form_a = self.get_form_rating(team_a)
         form_b = self.get_form_rating(team_b)
         form_exp_a = self.expected_result(form_a, form_b, home_adv)
-        form_delta = (k * 3.0) * mov * (act_a - form_exp_a)
+        form_delta = (k * FORM_ELO_K_MULTIPLIER) * mov * (act_a - form_exp_a)
         
         new_form_a = form_a + form_delta
         new_form_b = form_b - form_delta
@@ -236,6 +270,7 @@ class EloRatingSystem:
                     competition=competition,
                     is_neutral=is_neutral,
                     home_team=home if not is_neutral else None,
+                    match_date=row["date"],
                 )
                 
                 # Record history

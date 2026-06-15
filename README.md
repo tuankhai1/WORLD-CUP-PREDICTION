@@ -51,7 +51,7 @@ The system is divided into four main layers:
 The foundation of the prediction model relies on a highly comprehensive historical football dataset.
 
 - **Primary Source**: The model draws exclusively from the `martj42/international_results` GitHub repository. This robust, open-source database contains over 40,000 international football results dating back to the 19th century, ensuring massive historical depth and a fast, reliable ingestion process without the bottlenecks of fetching from multiple live endpoints.
-- **Processing (Timeline Truncation)**: The ingestion pipeline fetches the full dataset to establish stable Elo rating baselines, but explicitly truncates the machine learning training matrix to matches played from **2010 onwards**. This strictly limits the model to predicting on modern football trends, eliminating the bias of "historical ghost prestige" from decades past.
+- **Processing (Timeline Truncation)**: The ingestion pipeline fetches the full dataset to establish stable Elo rating baselines, but uses matches from **2010 onwards** to initialize modern-era Elo, then explicitly truncates the machine learning training matrix to matches played from **2022 onwards**. This strictly limits the model to predicting on modern football trends, eliminating the bias of "historical ghost prestige" from decades past.
 - **Official Squad Lists (PDF Extraction)**: The system utilizes `pdfplumber` to scrape the official FIFA 2026 World Cup 26-man squad list PDF. This gives the model the absolute ground-truth roster of players traveling to the tournament.
 
 ### 2. Feature Engineering
@@ -60,7 +60,7 @@ A robust, custom feature pipeline transforms raw match results into powerful pre
 
 - **Dual Elo Ratings**: A dual-system tracking both long-term historical prestige and a highly reactive 'Form Elo' (using an amplified K-factor) to mathematically measure a team's current trajectory.
 - **Club Form Power (2025/2026)**: The pipeline computes a weighted index of squad dominance based on the accumulated stats of each nation's players in the Top 5 European Leagues over the most recent season (Goals, Assists, Tackles, Interceptions). Legacy metrics like Total Caps have been explicitly removed to prevent bias.
-- **Exponential Sample Weighting**: During model training, an exponential decay function (with a 2-year half-life) mathematically scales the `sample_weight` of historical matches. Recent matches aggressively dictate the gradient descent, while older matches provide only underlying context.
+- **Exponential Sample Weighting**: During model training, an exponential decay function (configurable via `RECENCY_HALF_LIFE_DAYS`, currently a 270-day half-life) mathematically scales the `sample_weight` of historical matches. Recent matches aggressively dictate the gradient descent, while older matches provide only underlying context.
 - **Head-to-Head Statistics**: Historical matchups between two specific nations.
 - **Rolling xG & Pressing Intensity**: Advanced metrics (where available) modeling offensive output and defensive pressure.
 
@@ -137,6 +137,13 @@ To just regenerate the dashboard without retraining:
 
 ```bash
 python main.py --mode dashboard
+```
+
+
+To control Monte Carlo simulation depth:
+
+```bash
+python main.py --mode full --iterations 1000000
 ```
 
 The resulting `dashboard.html` will be generated in the `output/` directory. Simply open it in any web browser to explore the predictions!

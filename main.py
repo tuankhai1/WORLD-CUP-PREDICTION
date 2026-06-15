@@ -32,7 +32,7 @@ logging.basicConfig(
 logger = logging.getLogger("main")
 
 
-def run_full_pipeline(test_mode: bool = False, mode: str = "full"):
+def run_full_pipeline(test_mode: bool = False, mode: str = "full", iterations: int = MC_DEFAULT_ITERATIONS):
     """Run the complete pipeline."""
     total_start = time.time()
     
@@ -94,7 +94,7 @@ def run_full_pipeline(test_mode: bool = False, mode: str = "full"):
     else:
         n_trials = 100
         
-    best_params = run_tuning(X, y_wdl, y_gd, n_trials=n_trials)
+    best_params = run_tuning(X, y_wdl, y_gd, n_trials=n_trials, sample_weights=sample_weights)
     
     logger.info("Best parameters found:")
     for model_name, params in best_params.items():
@@ -135,7 +135,7 @@ def run_full_pipeline(test_mode: bool = False, mode: str = "full"):
     simulator = TournamentSimulator()
     simulator.load_predictions(prob_matrix)
     
-    iters = 10_000 if test_mode else MC_DEFAULT_ITERATIONS
+    iters = 10_000 if test_mode else iterations
     results = simulator.simulate(num_iterations=iters, seed=MC_DEFAULT_SEED)
     simulator.save_results()
     
@@ -165,7 +165,7 @@ def run_full_pipeline(test_mode: bool = False, mode: str = "full"):
     return results
 
 
-def run_update():
+def run_update(iterations: int = MC_DEFAULT_ITERATIONS):
     """Update predictions with latest match results."""
     logger.info("[UPDATE] Updating predictions with latest results...")
     
@@ -200,7 +200,7 @@ def run_update():
     # Re-simulate
     simulator = TournamentSimulator()
     simulator.load_predictions(prob_matrix)
-    results = simulator.simulate()
+    results = simulator.simulate(num_iterations=iterations)
     simulator.save_results()
     
     # Regenerate dashboard
@@ -238,7 +238,7 @@ def run_predict(team_a: str, team_b: str):
     print(f"{'='*50}\n")
 
 
-def run_simulate_only():
+def run_simulate_only(iterations: int = MC_DEFAULT_ITERATIONS):
     """Run simulation using saved model predictions."""
     from src.simulation.simulator import TournamentSimulator
     from src.model.predict import MatchPredictor
@@ -251,7 +251,7 @@ def run_simulate_only():
     
     simulator = TournamentSimulator()
     simulator.load_predictions(prob_matrix)
-    results = simulator.simulate()
+    results = simulator.simulate(num_iterations=iterations)
     simulator.save_results()
     
     # Regenerate dashboard
@@ -348,15 +348,15 @@ Examples:
     
     try:
         if args.mode in ["full", "test", "quick", "medium"]:
-            run_full_pipeline(test_mode=(args.mode == "test" or args.test), mode=args.mode)
+            run_full_pipeline(test_mode=(args.mode == "test" or args.test), mode=args.mode, iterations=args.iterations)
         elif args.mode == "update":
-            run_update()
+            run_update(iterations=args.iterations)
         elif args.mode == "predict":
             if not args.teams:
                 parser.error("--teams required for predict mode")
             run_predict(args.teams[0], args.teams[1])
         elif args.mode == "simulate":
-            run_simulate_only()
+            run_simulate_only(iterations=args.iterations)
         elif args.mode == "dashboard":
             run_dashboard_only()
     except KeyboardInterrupt:

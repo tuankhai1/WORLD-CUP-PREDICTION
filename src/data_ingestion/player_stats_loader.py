@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import pdfplumber
 import re
+from difflib import get_close_matches
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from config import RAW_DATA_DIR, resolve_team_name
@@ -18,7 +19,104 @@ class PlayerStatsLoader:
     def __init__(self):
         self.raw_path = RAW_DATA_DIR / "SquadLists-English.pdf"
         self.club_stats_path = RAW_DATA_DIR / "players_data-2025_2026.csv"
+        self.squad_players_path = RAW_DATA_DIR / "squad_players.csv"
         
+
+    @staticmethod
+    def _norm_name(name: str) -> str:
+        """Normalize player names for deterministic/fuzzy roster joins."""
+        return re.sub(r"[^a-z0-9]+", " ", str(name).lower()).strip()
+
+    def _calc_player_form_index(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Add a position-aware form index to a player-season stats frame."""
+        for col in ['Gls', 'Ast', 'SoT', '+/-', 'Int', 'TklW', 'PPM', 'Saves', '+/-90', 'Min', '90s']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+            else:
+                df[col] = 0
+
+        def calc_index(row):
+            pos = str(row.get('Pos', ''))
+            ppm = row['PPM']
+            idx = 0
+            if 'FW' in pos:
+                idx = (row['Gls'] * 3) + (row['Ast'] * 2) + (row['SoT'] * 0.5) + (row['+/-'] * 0.5)
+            elif 'MF' in pos:
+                idx = (row['Ast'] * 3) + (row['Int'] * 0.5) + (row['TklW'] * 0.5) + (ppm * 2)
+            elif 'DF' in pos:
+                idx = (row['TklW'] * 1.5) + (row['Int'] * 1.5) + (ppm * 3) + (row['+/-'] * 1)
+            elif 'GK' in pos:
+                idx = (row['Saves'] * 0.5) + (ppm * 3) + (row['+/-90'] * 5)
+            else:
+                idx = (row['Gls'] * 1.5) + (row['Ast'] * 1.5) + (row['TklW'] * 0.5) + (ppm * 2)
+
+            minutes = row['Min'] if row['Min'] else row['90s'] * 90
+            minutes_factor = min(1.0, max(0.15, minutes / 900)) if minutes else 0.15
+            return max(0, idx) * minutes_factor
+
+        df['FormIndex'] = df.apply(calc_index, axis=1)
+        return df
+
+    def load_roster_aware_club_form_stats(self) -> dict:
+        """Compute squad form by joining official squad players to season stats.
+
+        Expected optional file: data/raw/squad_players.csv with columns such as
+        team/team_code, player_name/name/player, club, and position/pos. If this
+        roster table is absent, the loader falls back to nationality-pool form.
+        """
+        if not self.squad_players_path.exists() or not self.club_stats_path.exists():
+            return {}
+
+        roster = pd.read_csv(self.squad_players_path)
+        stats = pd.read_csv(self.club_stats_path)
+        roster_player_col = next((c for c in ['player_name', 'Player', 'player', 'Name', 'name'] if c in roster.columns), None)
+        stats_player_col = next((c for c in ['Player', 'player_name', 'player', 'Name', 'name'] if c in stats.columns), None)
+        team_col = next((c for c in ['team', 'Team', 'nation', 'Nation'] if c in roster.columns), None)
+        if not roster_player_col or not stats_player_col or not team_col:
+            logger.warning("squad_players.csv missing required player/team columns; using nationality-pool form.")
+            return {}
+
+        stats = self._calc_player_form_index(stats)
+        stats['_norm_name'] = stats[stats_player_col].apply(self._norm_name)
+        roster['_norm_name'] = roster[roster_player_col].apply(self._norm_name)
+        stat_names = stats['_norm_name'].dropna().unique().tolist()
+
+        matched_rows = []
+        for _, squad_player in roster.iterrows():
+            norm = squad_player['_norm_name']
+            candidates = stats[stats['_norm_name'] == norm]
+            if candidates.empty:
+                matches = get_close_matches(norm, stat_names, n=1, cutoff=0.88)
+                candidates = stats[stats['_norm_name'] == matches[0]] if matches else pd.DataFrame()
+            if candidates.empty:
+                matched_rows.append({
+                    'team': resolve_team_name(str(squad_player[team_col])),
+                    'player_name': squad_player[roster_player_col],
+                    'player_form': 0.0,
+                    'matched': False,
+                })
+                continue
+            best = candidates.sort_values('FormIndex', ascending=False).iloc[0]
+            matched_rows.append({
+                'team': resolve_team_name(str(squad_player[team_col])),
+                'player_name': squad_player[roster_player_col],
+                'player_form': float(best['FormIndex']),
+                'matched': True,
+            })
+
+        matched = pd.DataFrame(matched_rows)
+        out_path = RAW_DATA_DIR.parent / "processed" / "squad_player_form.parquet"
+        matched.to_parquet(out_path, index=False)
+
+        squad_form = {}
+        for team, group in matched.groupby('team'):
+            ranked = group.sort_values('player_form', ascending=False)
+            top_xi = ranked.head(11)['player_form'].mean() if not ranked.empty else 0.0
+            depth = ranked.head(23).tail(12)['player_form'].mean() if len(ranked) > 11 else 0.0
+            squad_form[team] = (0.65 * top_xi) + (0.35 * depth)
+        logger.info(f"Computed roster-aware squad form for {len(squad_form)} nations.")
+        return squad_form
+
     def load_club_form_stats(self) -> dict:
         if not self.club_stats_path.exists():
             logger.warning(f"Club stats CSV not found at {self.club_stats_path}")
@@ -30,30 +128,7 @@ class PlayerStatsLoader:
         # Extract 3-letter code from "us USA" -> "USA"
         df['NationCode'] = df['Nation'].apply(lambda x: str(x).split(' ')[-1] if pd.notna(x) else None)
         
-        # Fill NaNs with 0 for numeric columns
-        for col in ['Gls', 'Ast', 'SoT', '+/-', 'Int', 'TklW', 'PPM', 'Saves', '+/-90']:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-            else:
-                df[col] = 0
-                
-        def calc_index(row):
-            pos = str(row.get('Pos', ''))
-            ppm = row['PPM']
-            idx = 0
-            
-            if 'FW' in pos:
-                idx = (row['Gls'] * 3) + (row['Ast'] * 2) + (row['SoT'] * 0.5) + (row['+/-'] * 0.5)
-            elif 'MF' in pos:
-                idx = (row['Ast'] * 3) + (row['Int'] * 0.5) + (row['TklW'] * 0.5) + (ppm * 2)
-            elif 'DF' in pos:
-                idx = (row['TklW'] * 1.5) + (row['Int'] * 1.5) + (ppm * 3) + (row['+/-'] * 1)
-            elif 'GK' in pos:
-                idx = (row['Saves'] * 0.5) + (ppm * 3) + (row['+/-90'] * 5)
-            
-            return max(0, idx)
-            
-        df['FormIndex'] = df.apply(calc_index, axis=1)
+        df = self._calc_player_form_index(df)
         
         nation_power = {}
         for nation, group in df.groupby('NationCode'):
@@ -69,7 +144,7 @@ class PlayerStatsLoader:
             
         logger.info(f"Loading official squad lists from {self.raw_path}")
         
-        club_form_map = self.load_club_form_stats()
+        club_form_map = self.load_roster_aware_club_form_stats() or self.load_club_form_stats()
         teams_data = []
         top_leagues = ['(ENG)', '(ESP)', '(ITA)', '(GER)', '(FRA)']
         
