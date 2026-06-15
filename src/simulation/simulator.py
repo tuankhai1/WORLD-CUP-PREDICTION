@@ -348,6 +348,25 @@ class TournamentSimulator:
         
         return self.results
 
+    def save_results(self, path: Optional[Path] = None) -> None:
+        """Save simulation results to a JSON file."""
+        path = path or OUTPUT_DIR / "simulation_results.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.results, f, indent=2)
+        logger.info(f"Simulation results saved to {path}")
+
+    def load_results(self, path: Optional[Path] = None) -> dict:
+        """Load simulation results from a JSON file."""
+        path = path or OUTPUT_DIR / "simulation_results.json"
+        if path.exists():
+            with open(path, "r", encoding="utf-8") as f:
+                self.results = json.load(f)
+            logger.info(f"Simulation results loaded from {path}")
+        else:
+            logger.warning(f"Simulation results file not found: {path}")
+        return self.results
+
     def get_winner_rankings(self) -> list[tuple[str, float]]:
         """
         Get teams ranked by probability of winning the tournament.
