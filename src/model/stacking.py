@@ -66,6 +66,27 @@ class StackedEnsemble:
         
         self.is_fitted = False
         self.training_metrics: dict = {}
+        self.use_stacked = True
+        self.best_clf_model_name: Optional[str] = None
+        self.best_reg_model_name: Optional[str] = None
+
+    def _get_base_model(self, name: Optional[str]):
+        """Return a fitted base wrapper by name, or None if unavailable."""
+        if name is None:
+            return None
+        for model in self.base_models:
+            if model.name == name:
+                return model
+        return None
+
+    @staticmethod
+    def _normalize_proba(proba: np.ndarray) -> np.ndarray:
+        """Clamp and normalize probability rows for stable logloss."""
+        proba = np.asarray(proba, dtype=float)
+        proba = np.clip(proba, 1e-15, 1.0)
+        row_sums = proba.sum(axis=1, keepdims=True)
+        row_sums[row_sums == 0] = 1.0
+        return proba / row_sums
 
     def fit(self, X: pd.DataFrame, y_wdl: pd.Series, y_gd: pd.Series, sample_weights: Optional[pd.Series] = None):
         """
@@ -100,13 +121,15 @@ class StackedEnsemble:
             # Only evaluate on non-zero predictions (skipping first fold's training data)
             mask = oof_proba.sum(axis=1) > 0
             if mask.any():
-                base_ll = log_loss(y_wdl[mask], oof_proba[mask], labels=[0, 1, 2])
-                base_acc = accuracy_score(y_wdl[mask], oof_proba[mask].argmax(axis=1))
+                normalized_oof = self._normalize_proba(oof_proba[mask])
+                base_ll = log_loss(y_wdl[mask], normalized_oof, labels=[0, 1, 2])
+                base_acc = accuracy_score(y_wdl[mask], normalized_oof.argmax(axis=1))
                 base_mse = mean_squared_error(y_gd[mask], oof_gd[mask])
                 logger.info(f"  {model.name} OOF - LogLoss: {base_ll:.4f}, "
                           f"Accuracy: {base_acc:.3f}, GD-MSE: {base_mse:.4f}")
                 self.training_metrics[f"{model.name}_logloss"] = base_ll
                 self.training_metrics[f"{model.name}_accuracy"] = base_acc
+                self.training_metrics[f"{model.name}_gd_mse"] = base_mse
 
         # Step 2: Stack into meta-features
         # Shape: (n_samples, 12) = 3 models x (3 probs + 1 gd)
@@ -143,7 +166,7 @@ class StackedEnsemble:
         self.calibrated_meta.fit(meta_features_valid, y_wdl_valid, **fit_params)
 
         # Evaluate stacked model
-        meta_proba = self.calibrated_meta.predict_proba(meta_features_valid)
+        meta_proba = self._normalize_proba(self.calibrated_meta.predict_proba(meta_features_valid))
         meta_pred = meta_proba.argmax(axis=1)
         meta_gd = self.meta_reg.predict(meta_features_valid)
         
@@ -154,6 +177,37 @@ class StackedEnsemble:
         self.training_metrics["stacked_logloss"] = stack_ll
         self.training_metrics["stacked_accuracy"] = stack_acc
         self.training_metrics["stacked_gd_mse"] = stack_mse
+
+        base_loglosses = {
+            model.name: self.training_metrics[f"{model.name}_logloss"]
+            for model in self.base_models
+            if f"{model.name}_logloss" in self.training_metrics
+        }
+        base_gd_mses = {
+            model.name: self.training_metrics[f"{model.name}_gd_mse"]
+            for model in self.base_models
+            if f"{model.name}_gd_mse" in self.training_metrics
+        }
+
+        if base_loglosses:
+            self.best_clf_model_name = min(base_loglosses, key=base_loglosses.get)
+            best_base_ll = base_loglosses[self.best_clf_model_name]
+            if best_base_ll < stack_ll:
+                self.use_stacked = False
+                logger.info(
+                    f"Using {self.best_clf_model_name} for W/D/L probabilities "
+                    f"because its OOF LogLoss ({best_base_ll:.4f}) beats "
+                    f"the stacked model ({stack_ll:.4f})."
+                )
+            else:
+                self.use_stacked = True
+                logger.info(
+                    f"Using stacked probabilities; stacked LogLoss ({stack_ll:.4f}) "
+                    f"beats best base LogLoss ({best_base_ll:.4f})."
+                )
+
+        if base_gd_mses:
+            self.best_reg_model_name = min(base_gd_mses, key=base_gd_mses.get)
         
         logger.info(f"\n{'='*60}")
         logger.info(f"STACKED ENSEMBLE RESULTS:")
@@ -180,8 +234,20 @@ class StackedEnsemble:
         if not self.is_fitted:
             raise RuntimeError("Model not fitted. Call fit() first.")
 
+        if not self.use_stacked:
+            clf_model = self._get_base_model(self.best_clf_model_name)
+            reg_model = self._get_base_model(self.best_reg_model_name or self.best_clf_model_name)
+            if clf_model is not None and reg_model is not None:
+                proba = self._normalize_proba(clf_model.predict_proba(X))
+                goal_diff = reg_model.predict_gd(X)
+                return {
+                    "proba": proba,
+                    "pred": proba.argmax(axis=1),
+                    "goal_diff": goal_diff,
+                }
+
         # Get base model predictions
-        base_probas = [model.predict_proba(X) for model in self.base_models]
+        base_probas = [self._normalize_proba(model.predict_proba(X)) for model in self.base_models]
         base_gds = [model.predict_gd(X) for model in self.base_models]
         
         # Stack into meta-features
@@ -190,7 +256,7 @@ class StackedEnsemble:
         )
         
         # Meta-learner predictions
-        proba = self.calibrated_meta.predict_proba(meta_features)
+        proba = self._normalize_proba(self.calibrated_meta.predict_proba(meta_features))
         pred = proba.argmax(axis=1)
         goal_diff = self.meta_reg.predict(meta_features)
         
@@ -235,6 +301,9 @@ class StackedEnsemble:
             "calibrated_meta": self.calibrated_meta,
             "training_metrics": self.training_metrics,
             "base_model_names": [m.name for m in self.base_models],
+            "use_stacked": self.use_stacked,
+            "best_clf_model_name": self.best_clf_model_name,
+            "best_reg_model_name": self.best_reg_model_name,
         }, path)
         
         logger.info(f"Stacked ensemble saved to {path}")
@@ -251,6 +320,9 @@ class StackedEnsemble:
         ensemble.meta_reg = data["meta_reg"]
         ensemble.calibrated_meta = data["calibrated_meta"]
         ensemble.training_metrics = data["training_metrics"]
+        ensemble.use_stacked = data.get("use_stacked", True)
+        ensemble.best_clf_model_name = data.get("best_clf_model_name")
+        ensemble.best_reg_model_name = data.get("best_reg_model_name")
         
         # Load base models
         for model in ensemble.base_models:

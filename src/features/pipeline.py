@@ -210,6 +210,10 @@ class FeaturePipeline:
             logger.warning(f"Missing features for {team_a} or {team_b}")
             return {}
 
+        return self._build_matchup_vector_from_features(fa, fb)
+
+    def _build_matchup_vector_from_features(self, fa: dict, fb: dict) -> dict:
+        """Build the numeric team_a - team_b vector from two feature snapshots."""
         vector = {}
         for key in fa:
             val_a = fa[key]
@@ -229,8 +233,210 @@ class FeaturePipeline:
         vector["fifa_rating_diff"] = fa.get("fifa_rating", 1500.0) - fb.get("fifa_rating", 1500.0)
         
         vector["club_form_power_diff"] = fa.get("club_form_power", 0.0) - fb.get("club_form_power", 0.0)
-        
+
         return vector
+
+    @staticmethod
+    def _default_xg_features() -> dict:
+        features = {}
+        for w in ROLLING_WINDOWS:
+            features[f"rolling_xg_for_{w}"] = 1.25
+            features[f"rolling_xg_against_{w}"] = 1.25
+            features[f"rolling_xg_diff_{w}"] = 0.0
+            features[f"rolling_goals_for_{w}"] = 1.2
+            features[f"rolling_goals_against_{w}"] = 1.2
+        features["xg_overperformance"] = 0.0
+        return features
+
+    @staticmethod
+    def _default_pressing_features() -> dict:
+        features = {
+            "ppda": 12.0,
+            "high_press_pct": 30.0,
+            "counterpress_rate": 0.35,
+            "defensive_line_height": 45.0,
+        }
+        for w in ROLLING_WINDOWS:
+            features[f"rolling_ppda_{w}"] = 12.0
+            features[f"rolling_high_press_pct_{w}"] = 30.0
+        return features
+
+    @staticmethod
+    def _default_form_features() -> dict:
+        features = {}
+        for w in ROLLING_WINDOWS:
+            features[f"recent_form_{w}"] = 1.0
+            features[f"clean_sheet_rate_{w}"] = 0.25
+        features.update({
+            "win_streak": 0,
+            "unbeaten_streak": 0,
+            "goals_scored_trend": 0.0,
+            "days_since_last_match": 30,
+            "total_matches_played": 0,
+            "overall_win_rate": 0.33,
+            "overall_draw_rate": 0.33,
+            "avg_goals_scored": 1.2,
+            "avg_goals_conceded": 1.2,
+        })
+        return features
+
+    @staticmethod
+    def _default_encoding_features() -> dict:
+        return {
+            "conf_freq": 0.1,
+            "team_freq": 0.02,
+            "conf_size": 5,
+        }
+
+    @staticmethod
+    def _ewm_latest(values: list[float], window: int, default: float) -> float:
+        recent = values[-window:]
+        if not recent:
+            return default
+        return round(float(pd.Series(recent).ewm(span=min(window, len(recent)), adjust=False).mean().iloc[-1]), 3)
+
+    @staticmethod
+    def _current_streak(results: list[str], unbeaten: bool = False) -> int:
+        streak = 0
+        for result in reversed(results):
+            if result == "W" or (unbeaten and result == "D"):
+                streak += 1
+            else:
+                break
+        return streak
+
+    @staticmethod
+    def _goals_trend(goals: list[float], window: int = 10) -> float:
+        recent = goals[-window:] if len(goals) >= window else goals
+        if len(recent) < 2:
+            return 0.0
+        x = np.arange(len(recent))
+        return round(float(np.polyfit(x, np.array(recent, dtype=float), 1)[0]), 4)
+
+    def _form_snapshot_from_state(self, state: dict, as_of_date: pd.Timestamp) -> dict:
+        if not state["points"]:
+            return self._default_form_features()
+
+        features = {}
+        for w in ROLLING_WINDOWS:
+            features[f"recent_form_{w}"] = self._ewm_latest(state["points"], w, 1.0)
+            features[f"clean_sheet_rate_{w}"] = self._ewm_latest(state["clean_sheets"], w, 0.25)
+
+        total_matches = len(state["points"])
+        features["win_streak"] = self._current_streak(state["results"], unbeaten=False)
+        features["unbeaten_streak"] = self._current_streak(state["results"], unbeaten=True)
+        features["goals_scored_trend"] = self._goals_trend(state["goals_for"])
+        features["days_since_last_match"] = (
+            max((as_of_date - state["last_date"]).days, 0)
+            if state["last_date"] is not None
+            else 30
+        )
+        features["total_matches_played"] = total_matches
+        features["overall_win_rate"] = round(state["results"].count("W") / total_matches, 3)
+        features["overall_draw_rate"] = round(state["results"].count("D") / total_matches, 3)
+        features["avg_goals_scored"] = round(float(np.mean(state["goals_for"])), 2)
+        features["avg_goals_conceded"] = round(float(np.mean(state["goals_against"])), 2)
+        return features
+
+    @staticmethod
+    def _update_form_state(state: dict, goals_for: int, goals_against: int, match_date: pd.Timestamp) -> None:
+        if goals_for > goals_against:
+            result = "W"
+            points = 3
+        elif goals_for == goals_against:
+            result = "D"
+            points = 1
+        else:
+            result = "L"
+            points = 0
+
+        state["points"].append(points)
+        state["clean_sheets"].append(1 if goals_against == 0 else 0)
+        state["results"].append(result)
+        state["goals_for"].append(goals_for)
+        state["goals_against"].append(goals_against)
+        state["last_date"] = match_date
+
+    def _compute_pre_match_form_snapshots(self, finished_matches: pd.DataFrame) -> dict:
+        """Return shifted form features keyed by (team, match_idx)."""
+        states: dict[str, dict] = {}
+        snapshots = {}
+
+        def state_for(team: str) -> dict:
+            if team not in states:
+                states[team] = {
+                    "points": [],
+                    "clean_sheets": [],
+                    "results": [],
+                    "goals_for": [],
+                    "goals_against": [],
+                    "last_date": None,
+                }
+            return states[team]
+
+        for match_idx, row in finished_matches.sort_values("date").iterrows():
+            match_date = pd.Timestamp(row["date"])
+            home = row["home_team"]
+            away = row["away_team"]
+
+            snapshots[(home, match_idx)] = self._form_snapshot_from_state(state_for(home), match_date)
+            snapshots[(away, match_idx)] = self._form_snapshot_from_state(state_for(away), match_date)
+
+            hs = int(row["home_score"])
+            away_score = int(row["away_score"])
+            self._update_form_state(state_for(home), hs, away_score, match_date)
+            self._update_form_state(state_for(away), away_score, hs, match_date)
+
+        return snapshots
+
+    def _build_xg_snapshot_lookup(self, finished_matches: pd.DataFrame) -> dict:
+        xg_features = compute_rolling_xg_features(finished_matches)
+        lookup = {}
+        defaults = self._default_xg_features()
+
+        for team, team_df in xg_features.items():
+            for _, row in team_df.iterrows():
+                values = {}
+                for key in defaults:
+                    value = row.get(key, defaults[key])
+                    values[key] = defaults[key] if pd.isna(value) else float(value)
+                lookup[(team, int(row["match_idx"]))] = values
+
+        return lookup
+
+    def _training_team_snapshot(
+        self,
+        team: str,
+        row: pd.Series,
+        side: str,
+        xg_lookup: dict,
+        form_lookup: dict,
+        pressing_features: dict,
+        encoding_features: dict,
+    ) -> dict:
+        match_idx = int(row.name)
+        features = {
+            "elo_rating": float(row[f"elo_{side}"]),
+            "form_elo_rating": float(row[f"form_elo_{side}"]),
+            "fifa_rating": FIFA_RANKINGS.get(team, 1500.0),
+            # Current squad form is not historically available for old matches.
+            # Keep it neutral in training; constant columns are removed below.
+            "club_form_power": 0.0,
+        }
+
+        features.update(self._default_xg_features())
+        features.update(xg_lookup.get((team, match_idx), {}))
+
+        features.update(self._default_pressing_features())
+        features.update(pressing_features.get(team, {}))
+
+        features.update(self._default_form_features())
+        features.update(form_lookup.get((team, match_idx), {}))
+
+        features.update(self._default_encoding_features())
+        features.update(encoding_features.get(team, {}))
+
+        return features
 
     @staticmethod
     def _match_importance_weight(competition: str) -> float:
@@ -259,18 +465,33 @@ class FeaturePipeline:
             Tuple of (X features, y_wdl target, y_gd target, sample_weights)
         """
         logger.info("Building training feature matrix...")
-        
-        # Build team features
-        self.build_team_features(matches, team_stats)
-        
-        # Build matchup vectors for each match
-        finished = matches.dropna(subset=["home_score", "away_score"]).copy()
-        
+
+        # Build training rows from pre-match snapshots. The inference path still
+        # uses build_team_features() to produce the latest tournament snapshot.
+        matches = matches.copy()
+        matches["date"] = pd.to_datetime(matches["date"])
+        matches_modern = matches[matches["date"] >= "2010-01-01"].copy()
+
+        logger.info("  Computing shifted Elo snapshots for training...")
+        elo_system = EloRatingSystem()
+        matches_with_elo = elo_system.process_matches(matches_modern)
+        matches_with_elo = matches_with_elo.sort_values("date").reset_index(drop=True)
+
+        finished = matches_with_elo.dropna(subset=["home_score", "away_score"]).copy().reset_index(drop=True)
+
+        logger.info("  Computing shifted rolling xG snapshots for training...")
+        xg_lookup = self._build_xg_snapshot_lookup(finished)
+
+        logger.info("  Computing shifted form snapshots for training...")
+        form_lookup = self._compute_pre_match_form_snapshots(finished)
+
+        logger.info("  Computing static priors for training...")
+        pressing_features = compute_pressing_features(finished, pd.DataFrame())
+        encoding_features = compute_team_level_encodings(team_stats)
+
         # --- Timeline Truncation ---
-        # Elo has been running since 2010. We give it 5 years to "stretch out" and settle
-        # into a stable distribution before we start using the values to train the trees.
-        # This prevents absolute scale distortion in the tree models.
-        finished["date"] = pd.to_datetime(finished["date"])
+        # Elo has been running since 2010. We give it time to settle before
+        # using the values to train the trees.
         finished = finished[finished["date"] >= TRAINING_CUTOFF_DATE].copy()
         logger.info(
             f"Truncating training data to current-cycle ML era "
@@ -287,7 +508,25 @@ class FeaturePipeline:
             home = row["home_team"]
             away = row["away_team"]
             
-            vector = self.build_matchup_vector(home, away)
+            home_features = self._training_team_snapshot(
+                home,
+                row,
+                side="home",
+                xg_lookup=xg_lookup,
+                form_lookup=form_lookup,
+                pressing_features=pressing_features,
+                encoding_features=encoding_features,
+            )
+            away_features = self._training_team_snapshot(
+                away,
+                row,
+                side="away",
+                xg_lookup=xg_lookup,
+                form_lookup=form_lookup,
+                pressing_features=pressing_features,
+                encoding_features=encoding_features,
+            )
+            vector = self._build_matchup_vector_from_features(home_features, away_features)
             if not vector:
                 continue
             
@@ -326,6 +565,12 @@ class FeaturePipeline:
         
         # Handle any NaN/inf
         X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+        constant_cols = [col for col in X.columns if X[col].nunique(dropna=False) <= 1]
+        if constant_cols:
+            X = X.drop(columns=constant_cols)
+            self.feature_columns = list(X.columns)
+            logger.info(f"Dropped {len(constant_cols)} constant training features")
         
         logger.info(f"Training matrix: {X.shape[0]} samples x {X.shape[1]} features")
         
@@ -339,6 +584,9 @@ class FeaturePipeline:
         pd.Series(self.feature_columns).to_csv(
             MODEL_DIR / "feature_columns.csv", index=False
         )
+
+        logger.info("Building latest team feature snapshot for inference...")
+        self.build_team_features(matches, team_stats)
         
         return X, y_wdl, y_gd, sample_weights
 
