@@ -23,6 +23,10 @@ from config import (
     TARGET_WDL,
     TARGET_GD,
     RANDOM_SEED,
+    RECENCY_HALF_LIFE_DAYS,
+    TRAINING_CUTOFF_DATE,
+    RECENCY_MIN_WEIGHT,
+    MATCH_IMPORTANCE_WEIGHTS,
 )
 from config import RAW_DATA_DIR
 from src.features.rolling_xg import compute_rolling_xg_features, compute_match_xg
@@ -227,6 +231,20 @@ class FeaturePipeline:
         
         return vector
 
+    @staticmethod
+    def _match_importance_weight(competition: str) -> float:
+        """Map competition labels to training sample-weight multipliers."""
+        comp = str(competition).lower()
+        if "world cup" in comp and ("qual" not in comp and "qualification" not in comp):
+            return MATCH_IMPORTANCE_WEIGHTS["world_cup"]
+        if "qual" in comp:
+            return MATCH_IMPORTANCE_WEIGHTS["qualifier"]
+        if any(token in comp for token in ["euro", "copa", "nations", "afcon", "asian cup", "gold cup"]):
+            return MATCH_IMPORTANCE_WEIGHTS["continental"]
+        if "friendly" in comp:
+            return MATCH_IMPORTANCE_WEIGHTS["friendly"]
+        return MATCH_IMPORTANCE_WEIGHTS["default"]
+
     def build_training_matrix(self, matches: pd.DataFrame, 
                                 team_stats: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, pd.Series]:
         """
@@ -252,13 +270,17 @@ class FeaturePipeline:
         # into a stable distribution before we start using the values to train the trees.
         # This prevents absolute scale distortion in the tree models.
         finished["date"] = pd.to_datetime(finished["date"])
-        finished = finished[finished["date"] >= "2015-01-01"].copy()
-        logger.info(f"Truncating training data to modern ML era (2015+): {len(finished)} matches.")
+        finished = finished[finished["date"] >= TRAINING_CUTOFF_DATE].copy()
+        logger.info(
+            f"Truncating training data to current-cycle ML era "
+            f"({TRAINING_CUTOFF_DATE}+): {len(finished)} matches."
+        )
         
         records = []
         targets_wdl = []
         targets_gd = []
         weights = []
+        latest_match_date = finished["date"].max()
         
         for _, row in finished.iterrows():
             home = row["home_team"]
@@ -281,9 +303,16 @@ class FeaturePipeline:
             
             targets_gd.append(hs - as_)
             
-            # --- RECENCY BIAS REMOVED ---
-            # All matches since 2015 carry equal weight.
-            weight = 1.0
+            # Heavily favor recent performance with exponential sample weighting.
+            # Equation: weight = max(min_weight, 0.5 ** (age_days / half_life))
+            #                  * match_importance_multiplier
+            age_days = max((latest_match_date - row["date"]).days, 0)
+            recency_weight = max(
+                RECENCY_MIN_WEIGHT,
+                0.5 ** (age_days / RECENCY_HALF_LIFE_DAYS),
+            )
+            importance_weight = self._match_importance_weight(row.get("competition", ""))
+            weight = recency_weight * importance_weight
             weights.append(weight)
 
         X = pd.DataFrame(records)

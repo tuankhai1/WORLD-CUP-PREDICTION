@@ -23,7 +23,8 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 
 def catboost_objective(trial: optuna.Trial, X: pd.DataFrame, 
-                        y_wdl: pd.Series, y_gd: pd.Series) -> float:
+                        y_wdl: pd.Series, y_gd: pd.Series,
+                        sample_weights: pd.Series | None = None) -> float:
     """
     Optuna objective function for CatBoost.
     
@@ -54,11 +55,15 @@ def catboost_objective(trial: optuna.Trial, X: pd.DataFrame,
         y_train, y_val = y_wdl.iloc[train_idx], y_wdl.iloc[val_idx]
 
         model = CatBoostClassifier(**params)
+        fit_kwargs = {}
+        if sample_weights is not None:
+            fit_kwargs["sample_weight"] = sample_weights.iloc[train_idx]
         model.fit(X_train, y_train, eval_set=(X_val, y_val), 
-                  early_stopping_rounds=50, verbose=0)
+                  early_stopping_rounds=50, verbose=0, **fit_kwargs)
         
         y_pred_proba = model.predict_proba(X_val)
-        score = log_loss(y_val, y_pred_proba, labels=[0, 1, 2])
+        val_weights = sample_weights.iloc[val_idx] if sample_weights is not None else None
+        score = log_loss(y_val, y_pred_proba, labels=[0, 1, 2], sample_weight=val_weights)
         scores.append(score)
 
         # Optuna pruning
@@ -70,7 +75,8 @@ def catboost_objective(trial: optuna.Trial, X: pd.DataFrame,
 
 
 def xgboost_objective(trial: optuna.Trial, X: pd.DataFrame, 
-                       y_wdl: pd.Series, y_gd: pd.Series) -> float:
+                       y_wdl: pd.Series, y_gd: pd.Series,
+                       sample_weights: pd.Series | None = None) -> float:
     """
     Optuna objective function for XGBoost.
     """
@@ -101,14 +107,19 @@ def xgboost_objective(trial: optuna.Trial, X: pd.DataFrame,
         y_train, y_val = y_wdl.iloc[train_idx], y_wdl.iloc[val_idx]
 
         model = XGBClassifier(**params)
+        fit_kwargs = {}
+        if sample_weights is not None:
+            fit_kwargs["sample_weight"] = sample_weights.iloc[train_idx]
         model.fit(
             X_train, y_train,
             eval_set=[(X_val, y_val)],
             verbose=False,
+            **fit_kwargs,
         )
         
         y_pred_proba = model.predict_proba(X_val)
-        score = log_loss(y_val, y_pred_proba, labels=[0, 1, 2])
+        val_weights = sample_weights.iloc[val_idx] if sample_weights is not None else None
+        score = log_loss(y_val, y_pred_proba, labels=[0, 1, 2], sample_weight=val_weights)
         scores.append(score)
 
         trial.report(score, fold)
@@ -119,7 +130,8 @@ def xgboost_objective(trial: optuna.Trial, X: pd.DataFrame,
 
 
 def lightgbm_objective(trial: optuna.Trial, X: pd.DataFrame, 
-                        y_wdl: pd.Series, y_gd: pd.Series) -> float:
+                        y_wdl: pd.Series, y_gd: pd.Series,
+                        sample_weights: pd.Series | None = None) -> float:
     """
     Optuna objective function for LightGBM.
     """
@@ -151,13 +163,18 @@ def lightgbm_objective(trial: optuna.Trial, X: pd.DataFrame,
         y_train, y_val = y_wdl.iloc[train_idx], y_wdl.iloc[val_idx]
 
         model = LGBMClassifier(**params)
+        fit_kwargs = {}
+        if sample_weights is not None:
+            fit_kwargs["sample_weight"] = sample_weights.iloc[train_idx]
         model.fit(
             X_train, y_train,
             eval_set=[(X_val, y_val)],
+            **fit_kwargs,
         )
         
         y_pred_proba = model.predict_proba(X_val)
-        score = log_loss(y_val, y_pred_proba, labels=[0, 1, 2])
+        val_weights = sample_weights.iloc[val_idx] if sample_weights is not None else None
+        score = log_loss(y_val, y_pred_proba, labels=[0, 1, 2], sample_weight=val_weights)
         scores.append(score)
 
         trial.report(score, fold)
@@ -168,7 +185,8 @@ def lightgbm_objective(trial: optuna.Trial, X: pd.DataFrame,
 
 
 def run_tuning(X: pd.DataFrame, y_wdl: pd.Series, y_gd: pd.Series,
-               n_trials: int = OPTUNA_N_TRIALS) -> dict:
+               n_trials: int = OPTUNA_N_TRIALS,
+               sample_weights: pd.Series | None = None) -> dict:
     """
     Run Optuna hyperparameter tuning for all three base models.
     
@@ -210,7 +228,7 @@ def run_tuning(X: pd.DataFrame, y_wdl: pd.Series, y_gd: pd.Series,
         )
 
         study.optimize(
-            lambda trial: objective_fn(trial, X, y_wdl, y_gd),
+            lambda trial: objective_fn(trial, X, y_wdl, y_gd, sample_weights=sample_weights),
             n_trials=n_trials,
             show_progress_bar=True,
         )

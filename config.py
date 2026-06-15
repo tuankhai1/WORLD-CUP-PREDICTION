@@ -148,6 +148,19 @@ OPTUNA_N_TRIALS = 100               # Trials per base model
 OPTUNA_CV_FOLDS = 5                 # TimeSeriesSplit folds
 RANDOM_SEED = 42
 TEST_SIZE = 0.2                     # Holdout for final evaluation
+RECENCY_HALF_LIFE_DAYS = 270        # Aggressive exponential sample-weight half-life for recent form
+TRAINING_CUTOFF_DATE = "2022-01-01"  # Keep model focused on the current World Cup cycle
+RECENCY_MIN_WEIGHT = 0.03          # Floor so older retained matches keep small context
+MATCH_IMPORTANCE_WEIGHTS = {
+    "world_cup": 1.50,
+    "qualifier": 1.25,
+    "continental": 1.15,
+    "friendly": 0.65,
+    "default": 1.00,
+}
+ELO_HALF_LIFE_DAYS = 1095          # Long Elo decays halfway to baseline every 3 years
+FORM_ELO_HALF_LIFE_DAYS = 180      # Form Elo decays halfway to baseline every 6 months
+FORM_ELO_K_MULTIPLIER = 3.0
 
 # Target columns
 TARGET_WDL = "result"               # 0=Loss, 1=Draw, 2=Win (from team_a perspective)
