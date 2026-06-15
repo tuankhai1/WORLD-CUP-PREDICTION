@@ -18,7 +18,7 @@
 
 namespace py = pybind11;
 
-// ─── Python-facing wrapper for full tournament simulation ────────────────────
+// Python-facing wrapper for full tournament simulation
 
 py::dict py_simulate_tournament(
     std::vector<std::vector<int>> groups,         // [[team_ids...], ...]
@@ -118,7 +118,7 @@ py::dict py_simulate_tournament(
     return output;
 }
 
-// ─── Python-facing wrapper for single match simulation ───────────────────────
+// Python-facing wrapper for single match simulation
 
 py::dict py_simulate_single_match(
     double win_p, double draw_p, double loss_p, double xgd,
@@ -139,7 +139,7 @@ py::dict py_simulate_single_match(
     return output;
 }
 
-// ─── Batch single-match simulation for scoreline distribution ────────────────
+// Batch single-match simulation for scoreline distribution
 
 py::dict py_simulate_match_distribution(
     double win_p, double draw_p, double loss_p, double xgd,
@@ -182,7 +182,7 @@ py::dict py_simulate_match_distribution(
     return output;
 }
 
-// ─── Module Definition ──────────────────────────────────────────────────────
+// Module definition
 
 PYBIND11_MODULE(mc_simulation, m) {
     m.doc() = "Monte Carlo tournament simulation engine for World Cup prediction";

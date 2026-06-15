@@ -19,13 +19,120 @@ class PlayerStatsLoader:
     def __init__(self):
         self.raw_path = RAW_DATA_DIR / "SquadLists-English.pdf"
         self.club_stats_path = RAW_DATA_DIR / "players_data-2025_2026.csv"
+        self.club_stats_dir = RAW_DATA_DIR / "player_stats"
         self.squad_players_path = RAW_DATA_DIR / "squad_players.csv"
+        self._club_stats_cache: pd.DataFrame | None = None
         
 
     @staticmethod
     def _norm_name(name: str) -> str:
         """Normalize player names for deterministic/fuzzy roster joins."""
         return re.sub(r"[^a-z0-9]+", " ", str(name).lower()).strip()
+
+    @staticmethod
+    def _canonicalize_stats_columns(df: pd.DataFrame) -> pd.DataFrame:
+        """Normalize common provider column names into the internal schema."""
+        aliases = {
+            "Player": ["player", "player_name", "name", "Name"],
+            "Nation": ["nationality", "Nationality", "country", "Country"],
+            "Pos": ["position", "Position"],
+            "Squad": ["team", "Team", "club", "Club"],
+            "Comp": ["league", "League", "competition", "Competition"],
+            "Gls": ["goals", "Goals", "G"],
+            "Ast": ["assists", "Assists", "A"],
+            "SoT": ["shots_on_target", "Shots On Target", "Shots on Target"],
+            "+/-": ["plus_minus", "PlusMinus", "Plus/Minus"],
+            "Int": ["interceptions", "Interceptions"],
+            "TklW": ["tackles_won", "Tackles Won", "TacklesWon"],
+            "PPM": ["points_per_match", "Points Per Match", "Pts/MP"],
+            "Saves": ["saves", "Save", "Saves_stats_keeper"],
+            "+/-90": ["plus_minus_per90", "PlusMinus90", "+/-_per90"],
+            "Min": ["minutes", "Minutes"],
+            "90s": ["nineties", "Nineties"],
+        }
+
+        rename_map = {}
+        lower_to_original = {str(col).lower(): col for col in df.columns}
+        for target, candidates in aliases.items():
+            if target in df.columns:
+                continue
+            for candidate in candidates:
+                source = lower_to_original.get(str(candidate).lower())
+                if source is not None:
+                    rename_map[source] = target
+                    break
+
+        if rename_map:
+            df = df.rename(columns=rename_map)
+        return df
+
+    def _club_stats_paths(self) -> list[Path]:
+        """Return all configured player-stat CSV paths without duplicates."""
+        paths: list[Path] = []
+        if self.club_stats_path.exists():
+            paths.append(self.club_stats_path)
+        if self.club_stats_dir.exists():
+            paths.extend(sorted(self.club_stats_dir.glob("*.csv")))
+
+        seen = set()
+        unique_paths = []
+        for path in paths:
+            resolved = path.resolve()
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            unique_paths.append(path)
+        return unique_paths
+
+    def _load_club_stats(self) -> pd.DataFrame:
+        """Load and merge one or more current-season player-stat exports."""
+        if self._club_stats_cache is not None:
+            return self._club_stats_cache.copy()
+
+        frames = []
+        for path in self._club_stats_paths():
+            try:
+                df = pd.read_csv(path)
+            except Exception as exc:
+                logger.warning(f"Could not read player stats CSV {path}: {exc}")
+                continue
+            df = self._canonicalize_stats_columns(df)
+            df["_source_file"] = path.name
+            frames.append(df)
+            logger.info(f"Loaded {len(df)} player stat rows from {path}")
+
+        if not frames:
+            logger.warning(
+                f"No player stat CSVs found at {self.club_stats_path} "
+                f"or in {self.club_stats_dir}"
+            )
+            return pd.DataFrame()
+
+        stats = pd.concat(frames, ignore_index=True, sort=False)
+        dedupe_cols = [c for c in ["Player", "Nation", "Squad", "Comp", "Min"] if c in stats.columns]
+        if dedupe_cols:
+            before = len(stats)
+            stats = stats.drop_duplicates(subset=dedupe_cols, keep="last")
+            if len(stats) != before:
+                logger.info(f"Dropped {before - len(stats)} duplicate player stat rows")
+        self._club_stats_cache = stats
+        return stats.copy()
+
+    @staticmethod
+    def _nation_keys(value: str) -> list[str]:
+        """Return possible country-code/name keys for a provider nationality value."""
+        raw = str(value).strip()
+        if not raw or raw.lower() == "nan":
+            return []
+
+        keys = {resolve_team_name(raw)}
+        parts = raw.split()
+        if parts:
+            last = parts[-1].upper()
+            if len(last) == 3:
+                keys.add(last)
+                keys.add(resolve_team_name(last))
+        return [key for key in keys if key]
 
     def _calc_player_form_index(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add a position-aware form index to a player-season stats frame."""
@@ -64,11 +171,11 @@ class PlayerStatsLoader:
         team/team_code, player_name/name/player, club, and position/pos. If this
         roster table is absent, the loader falls back to nationality-pool form.
         """
-        if not self.squad_players_path.exists() or not self.club_stats_path.exists():
+        stats = self._load_club_stats()
+        if not self.squad_players_path.exists() or stats.empty:
             return {}
 
         roster = pd.read_csv(self.squad_players_path)
-        stats = pd.read_csv(self.club_stats_path)
         roster_player_col = next((c for c in ['player_name', 'Player', 'player', 'Name', 'name'] if c in roster.columns), None)
         stats_player_col = next((c for c in ['Player', 'player_name', 'player', 'Name', 'name'] if c in stats.columns), None)
         team_col = next((c for c in ['team', 'Team', 'nation', 'Nation'] if c in roster.columns), None)
@@ -118,20 +225,24 @@ class PlayerStatsLoader:
         return squad_form
 
     def load_club_form_stats(self) -> dict:
-        if not self.club_stats_path.exists():
-            logger.warning(f"Club stats CSV not found at {self.club_stats_path}")
+        df = self._load_club_stats()
+        if df.empty:
             return {}
-            
-        logger.info(f"Loading club stats from {self.club_stats_path}")
-        df = pd.read_csv(self.club_stats_path)
+
+        if "Nation" not in df.columns:
+            logger.warning("Player stats are missing a Nation/Nationality column.")
+            return {}
         
         # Extract 3-letter code from "us USA" -> "USA"
-        df['NationCode'] = df['Nation'].apply(lambda x: str(x).split(' ')[-1] if pd.notna(x) else None)
+        df['NationKey'] = df['Nation'].apply(self._nation_keys)
         
         df = self._calc_player_form_index(df)
-        
+
+        df = df.explode('NationKey')
+        df = df[df['NationKey'].notna() & (df['NationKey'] != "")]
+
         nation_power = {}
-        for nation, group in df.groupby('NationCode'):
+        for nation, group in df.groupby('NationKey'):
             top_15 = group.nlargest(15, 'FormIndex')
             nation_power[nation] = top_15['FormIndex'].sum()
             
@@ -165,14 +276,19 @@ class PlayerStatsLoader:
                             team_name = m.group(1).strip()
                             team_code = line.strip()[-4:-1] # Extract the 3-letter code
                             
-                            if team_name == "IR Iran": team_name = "Iran"
-                            if team_name == "Korea Republic": team_name = "South Korea"
-                            if team_name == "USA": team_name = "United States"
-                            if team_name == "Cabo Verde": team_name = "Cape Verde"
-                            if team_name == "Côte D'Ivoire": team_name = "Ivory Coast"
-                            if team_name == "Türkiye": team_name = "Turkey"
-                            if team_name == "Congo DR": team_name = "DR Congo"
-                            if team_name == "Czechia": team_name = "Czech Republic"
+                            aliases = {
+                                "IR Iran": "Iran",
+                                "Korea Republic": "South Korea",
+                                "USA": "United States",
+                                "Cabo Verde": "Cape Verde",
+                                "Cote D'Ivoire": "Ivory Coast",
+                                "Côte D'Ivoire": "Ivory Coast",
+                                "Turkiye": "Turkey",
+                                "Türkiye": "Turkey",
+                                "Congo DR": "DR Congo",
+                                "Czechia": "Czech Republic",
+                            }
+                            team_name = aliases.get(team_name, team_name)
                             
                             team_name = resolve_team_name(team_name)
                             break
@@ -215,8 +331,15 @@ class PlayerStatsLoader:
             # Note: Legacy squad_power_rating using total_caps and total_international_goals 
             # has been completely removed to prevent historical bias favoring older players.
             
-            # Add Club Form Power
-            agg_df['club_form_power'] = agg_df['team_code'].map(club_form_map).fillna(0)
+            # Add Club Form Power. Stats providers may key by FIFA code (ARG)
+            # or full country name (Argentina), so try both.
+            agg_df['club_form_power'] = agg_df.apply(
+                lambda row: club_form_map.get(
+                    row.get('team_code'),
+                    club_form_map.get(row.get('team'), 0.0),
+                ),
+                axis=1,
+            )
             
             logger.info(f"Generated OFFICIAL squad power ratings for {len(agg_df)} nations.")
             
@@ -235,5 +358,8 @@ if __name__ == "__main__":
     loader = PlayerStatsLoader()
     df = loader.load_and_aggregate()
     if not df.empty:
-        print("\nTop 10 Nations by Club Form Power:")
-        print(df.sort_values('club_form_power', ascending=False).head(10)[['team', 'club_form_power']].to_string(index=False))
+        top_teams = df.sort_values("club_form_power", ascending=False).head(10)
+        logger.info(
+            "Top 10 nations by club form power:\n%s",
+            top_teams[["team", "club_form_power"]].to_string(index=False),
+        )

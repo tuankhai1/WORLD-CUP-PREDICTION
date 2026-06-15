@@ -37,7 +37,7 @@ def run_full_pipeline(test_mode: bool = False, mode: str = "full", iterations: i
     total_start = time.time()
     
     logger.info("=" * 70)
-    logger.info("  2026 FIFA WORLD CUP PREDICTION — FULL PIPELINE")
+    logger.info("  2026 FIFA WORLD CUP PREDICTION - FULL PIPELINE")
     logger.info("=" * 70)
     
     # Data Ingestion
@@ -134,6 +134,7 @@ def run_full_pipeline(test_mode: bool = False, mode: str = "full", iterations: i
     
     simulator = TournamentSimulator()
     simulator.load_predictions(prob_matrix)
+    simulator.lock_finished_matches(matches_df)
     
     iters = 10_000 if test_mode else iterations
     results = simulator.simulate(num_iterations=iters, seed=MC_DEFAULT_SEED)
@@ -200,6 +201,7 @@ def run_update(iterations: int = MC_DEFAULT_ITERATIONS):
     # Re-simulate
     simulator = TournamentSimulator()
     simulator.load_predictions(prob_matrix)
+    simulator.lock_finished_matches(matches_df)
     results = simulator.simulate(num_iterations=iterations)
     simulator.save_results()
     

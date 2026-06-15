@@ -28,7 +28,8 @@ class DataMerger:
     into a unified dataset suitable for feature engineering.
     
     Data sources:
-    1. GitHub (martj42/international_results): Comprehensive match results
+    1. Local 2026 World Cup fixture/result file, when present
+    2. GitHub (martj42/international_results): Comprehensive match results
     
     Output:
     - Unified match-level DataFrame with standardized team names
@@ -48,6 +49,13 @@ class DataMerger:
             Dict mapping source name to DataFrame
         """
         data = {}
+
+        # Live/current tournament file. This lets update jobs lock in actual
+        # 2026 results without waiting for the historical GitHub dataset.
+        wc_path = RAW_DATA_DIR / "wc2026_matches.parquet"
+        if wc_path.exists():
+            data["wc2026"] = pd.read_parquet(wc_path)
+            logger.info(f"Loaded {len(data['wc2026'])} matches (WC 2026 local)")
         
         # GitHub data
         gh_path = RAW_DATA_DIR / "github_historical.parquet"
@@ -73,7 +81,14 @@ class DataMerger:
         """
         all_matches = []
 
-        # 1. GitHub historical matches
+        # 1. Current tournament fixtures/results should win de-duplication.
+        if "wc2026" in raw_data:
+            df = raw_data["wc2026"].copy()
+            df = self._standardize_team_names(df)
+            df["source"] = "wc2026"
+            all_matches.append(df)
+
+        # 2. GitHub historical matches
         if "github" in raw_data:
             df = raw_data["github"].copy()
             df = self._standardize_team_names(df)
@@ -137,7 +152,7 @@ class DataMerger:
             
             total_matches = len(home_matches) + len(away_matches)
             if total_matches == 0:
-                # No match history — use FIFA ranking as baseline
+                # No match history - use FIFA ranking as baseline
                 team_records.append({
                     "team": team,
                     "matches_played": 0,

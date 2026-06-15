@@ -39,6 +39,7 @@ class MatchPredictor:
         self.pipeline = pipeline
         self.ensemble = ensemble
         self._prediction_cache: dict = {}
+        self._raw_prediction_cache: dict = {}
 
     def load(self):
         """Load saved pipeline and model from disk."""
@@ -70,34 +71,59 @@ class MatchPredictor:
         if self.pipeline is None or self.ensemble is None:
             self.load()
 
-        # Build feature vector for this matchup
-        X = self.pipeline.predict_matchup(team_a, team_b)
-        if X is None:
+        raw_ab = self._raw_model_prediction(team_a, team_b)
+        raw_ba = self._raw_model_prediction(team_b, team_a)
+        if raw_ab is None or raw_ba is None:
             logger.warning(f"Cannot predict {team_a} vs {team_b}: missing features")
-            # Return Elo-based fallback
             return self._elo_fallback(team_a, team_b)
 
-        # Get ensemble prediction
-        result = self.ensemble.predict_match(X)
-        
-        # Enhance with predicted scoreline
-        xgd = result["expected_goal_diff"]
-        predicted_score = self._xgd_to_score(
-            xgd, result["win_prob"], result["draw_prob"], result["loss_prob"]
-        )
-        
+        win_prob = (raw_ab["win_prob"] + raw_ba["loss_prob"]) / 2
+        draw_prob = (raw_ab["draw_prob"] + raw_ba["draw_prob"]) / 2
+        loss_prob = (raw_ab["loss_prob"] + raw_ba["win_prob"]) / 2
+        total = win_prob + draw_prob + loss_prob
+        if total > 0:
+            win_prob /= total
+            draw_prob /= total
+            loss_prob /= total
+
+        xgd = (raw_ab["expected_goal_diff"] - raw_ba["expected_goal_diff"]) / 2
+        predicted_score = self._xgd_to_score(xgd, win_prob, draw_prob, loss_prob)
+
         prediction = {
             "team_a": team_a,
             "team_b": team_b,
-            "win_prob": round(result["win_prob"], 4),
-            "draw_prob": round(result["draw_prob"], 4),
-            "loss_prob": round(result["loss_prob"], 4),
+            "win_prob": round(win_prob, 4),
+            "draw_prob": round(draw_prob, 4),
+            "loss_prob": round(loss_prob, 4),
             "expected_goal_diff": round(xgd, 2),
             "predicted_score": predicted_score,
         }
-        
+
         self._prediction_cache[cache_key] = prediction
         return prediction
+
+    def _raw_model_prediction(self, team_a: str, team_b: str) -> Optional[dict]:
+        """Run the model for one ordered matchup without symmetry correction."""
+        cache_key = f"{team_a}_vs_{team_b}"
+        if cache_key in self._raw_prediction_cache:
+            return self._raw_prediction_cache[cache_key]
+
+        if self.pipeline is None or self.ensemble is None:
+            self.load()
+
+        X = self.pipeline.predict_matchup(team_a, team_b)
+        if X is None:
+            return None
+
+        result = self.ensemble.predict_match(X)
+        raw = {
+            "win_prob": round(result["win_prob"], 4),
+            "draw_prob": round(result["draw_prob"], 4),
+            "loss_prob": round(result["loss_prob"], 4),
+            "expected_goal_diff": round(result["expected_goal_diff"], 4),
+        }
+        self._raw_prediction_cache[cache_key] = raw
+        return raw
 
     def _elo_fallback(self, team_a: str, team_b: str) -> dict:
         """Elo-based prediction fallback when model isn't available."""

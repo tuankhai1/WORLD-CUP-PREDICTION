@@ -25,7 +25,7 @@ DEFAULT_PRESSING = {
 }
 
 # Pressing style estimates based on confederation tendencies
-# These are rough archetypes — will be overridden by actual data
+# These are rough archetypes - will be overridden by actual data
 CONFEDERATION_PRESSING_PRIORS = {
     "UEFA": {"ppda": 10.5, "high_press_pct": 35.0, "def_line_height": 48.0},
     "CONMEBOL": {"ppda": 11.0, "high_press_pct": 32.0, "def_line_height": 46.0},
@@ -96,7 +96,7 @@ def estimate_pressing_from_results(matches: pd.DataFrame,
     when event-level data is unavailable.
     
     Uses several proxies:
-    - Possession correlates inversely with PPDA (high possession → low PPDA)
+    - Possession correlates inversely with PPDA (high possession -> low PPDA)
     - Goal difference as proxy for pressing efficiency
     - FIFA ranking as proxy for tactical sophistication
     

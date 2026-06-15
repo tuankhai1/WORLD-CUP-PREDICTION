@@ -10,7 +10,8 @@ full training workflow.
 | --- | --- | --- | --- |
 | `github_historical.parquet` | `DataMerger` | International match results fetched from `martj42/international_results` by `GithubDataLoader`. | Match-level rows with `date`, `home_team`, `away_team`, `home_score`, `away_score`, and competition/status metadata when available. |
 | `SquadLists-English.pdf` | `PlayerStatsLoader` | Official tournament squad list PDF. | FIFA-style country pages containing player rows and country three-letter codes. |
-| `players_data-2025_2026.csv` | `PlayerStatsLoader` | Club-season player statistics. | Player rows with at least `Nation`, `Player`, `Pos`, `Gls`, `Ast`, `SoT`, `+/-`, `Int`, `TklW`, `PPM`, `Saves`, and `+/-90`; missing metric columns are filled with zero. |
+| `players_data-2025_2026.csv` | `PlayerStatsLoader` | Backward-compatible club-season player statistics export. | Player rows with at least `Nation`, `Player`, `Pos`, `Gls`, `Ast`, `SoT`, `+/-`, `Int`, `TklW`, `PPM`, `Saves`, and `+/-90`; missing metric columns are filled with zero. |
+| `player_stats/*.csv` | `PlayerStatsLoader` | Optional extra league/player-stat exports beyond the Top 5 leagues. | Same preferred columns as above. Common aliases like `Goals`, `Assists`, `Team`, `Club`, `League`, and `Nationality` are normalized automatically. |
 | `squad_players.csv` | `PlayerStatsLoader` | Optional normalized official roster table for true squad-aware form. | Rows with `team` plus one of `player_name`, `Player`, `player`, `Name`, or `name`; used to match each squad player to club-season stats. |
 
 ## How to regenerate
@@ -20,7 +21,8 @@ full training workflow.
 2. Place the official squad PDF at `data/raw/SquadLists-English.pdf`.
 3. Optionally export normalized official roster rows to `data/raw/squad_players.csv`.
 4. Export the latest season player statistics to
-   `data/raw/players_data-2025_2026.csv`.
+   `data/raw/players_data-2025_2026.csv`, or place multiple league exports in
+   `data/raw/player_stats/`.
 5. Run `python src/data_ingestion/player_stats_loader.py` to build
    `data/processed/squad_ratings.parquet`.
 6. Run `python main.py --mode full --iterations 1000000` to train, simulate,
@@ -38,10 +40,10 @@ nationality-pool method: grouping by player nationality code and summing each
 nation's top 15 player form scores. That fallback is useful for experimentation,
 but it is less accurate than actual squad-aware form.
 
-## Optional browser dependency
+## Extending player coverage beyond Top 5 leagues
 
-`scrape_fbref.py` uses Playwright. After installing requirements, run:
-
-```bash
-playwright install chromium
-```
+Create `data/raw/player_stats/` and drop one CSV per provider/competition, for
+example `turkey-super-lig.csv`, `portugal-primeira.csv`, `mls.csv`,
+`saudi-pro-league.csv`, or `brazil-serie-a.csv`. The loader merges those rows
+with the legacy `players_data-2025_2026.csv`, de-duplicates repeated player
+rows, and recalculates `club_form_power` from the combined pool.

@@ -46,16 +46,11 @@ def daily_update():
         from src.simulation.simulator import TournamentSimulator
         from src.output.dashboard import DashboardGenerator
         from config import MC_DEFAULT_ITERATIONS
-        import pandas as pd
         
         # 1. Fetch latest data
         logger.info("\n>> Fetching latest match results from Github...")
         gh_loader = GithubDataLoader()
         gh_loader.fetch_data()
-        
-        # Define empty DataFrames for backwards compatibility in the simulation block
-        finished = pd.DataFrame()
-        upcoming = pd.DataFrame()
         
         # 2. Re-merge data
         logger.info("\n>> Merging data...")
@@ -80,18 +75,8 @@ def daily_update():
         prob_matrix = predictor.generate_probability_matrix()
         match_preds = predictor.predict_group_matches()
         
-        # Lock in finished match results
         simulator = TournamentSimulator()
-        if not finished.empty:
-            for _, match in finished.iterrows():
-                if match.get("home_score") is not None:
-                    simulator.structure.lock_result(
-                        team_a=match["home_team"],
-                        team_b=match["away_team"],
-                        score_a=int(match["home_score"]),
-                        score_b=int(match["away_score"]),
-                        stage=match.get("stage", "GROUP_STAGE"),
-                    )
+        simulator.lock_finished_matches(matches_df)
         
         # 5. Simulate
         logger.info("\n>> Running Monte Carlo simulation...")
@@ -111,6 +96,7 @@ def daily_update():
             simulation_results=results,
             match_predictions=match_preds,
             model_metrics=ensemble.training_metrics,
+            prob_matrix=prob_matrix,
         )
         
         elapsed = time.time() - start

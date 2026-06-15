@@ -20,6 +20,7 @@ from config import (
     GROUPS,
     ALL_TEAMS,
     OUTPUT_DIR,
+    resolve_team_name,
 )
 from src.simulation.tournament import TournamentStructure
 
@@ -72,6 +73,69 @@ class TournamentSimulator:
         """
         self.prob_matrix = prediction_matrix
         logger.info(f"Loaded {len(self.prob_matrix)} matchup predictions")
+
+    def lock_finished_matches(self, matches: pd.DataFrame) -> int:
+        """
+        Lock completed 2026 tournament matches into the simulator.
+
+        The historical match table can contain many old World Cup matches, so
+        this intentionally only accepts rows with explicit 2026 tournament
+        metadata from the local fixture/results file.
+        """
+        if matches is None or matches.empty:
+            return 0
+
+        required = {"home_team", "away_team", "home_score", "away_score"}
+        if not required.issubset(matches.columns):
+            return 0
+
+        finished = matches.dropna(subset=["home_score", "away_score"]).copy()
+        if finished.empty:
+            return 0
+
+        if "status" in finished.columns:
+            finished = finished[
+                finished["status"].astype(str).str.upper().isin({"FINISHED", "FT", "AET", "PEN"})
+            ]
+
+        tournament_mask = pd.Series(False, index=finished.index)
+        if "season" in finished.columns:
+            tournament_mask |= pd.to_numeric(finished["season"], errors="coerce").eq(2026)
+        if "stage" in finished.columns:
+            tournament_mask |= finished["stage"].notna()
+        finished = finished[tournament_mask]
+
+        count = 0
+        for _, match in finished.iterrows():
+            team_a = resolve_team_name(str(match["home_team"]))
+            team_b = resolve_team_name(str(match["away_team"]))
+            if team_a not in ALL_TEAMS or team_b not in ALL_TEAMS:
+                continue
+
+            self.structure.lock_result(
+                team_a=team_a,
+                team_b=team_b,
+                score_a=int(match["home_score"]),
+                score_b=int(match["away_score"]),
+                stage=str(match.get("stage", "GROUP_STAGE")),
+            )
+            count += 1
+
+        if count:
+            logger.info(f"Locked {count} finished 2026 tournament matches")
+        return count
+
+    def _get_locked_result(self, team_a: str, team_b: str, stage: Optional[str] = None) -> Optional[tuple[int, int]]:
+        """Return a locked score from team_a/team_b perspective, if present."""
+        direct = self.structure.locked_results.get(f"{team_a}|{team_b}")
+        if direct and (stage is None or direct.get("stage") == stage):
+            return int(direct["score_a"]), int(direct["score_b"])
+
+        reverse = self.structure.locked_results.get(f"{team_b}|{team_a}")
+        if reverse and (stage is None or reverse.get("stage") == stage):
+            return int(reverse["score_b"]), int(reverse["score_a"])
+
+        return None
 
     def _build_cpp_prob_map(self) -> dict:
         """
@@ -181,15 +245,19 @@ class TournamentSimulator:
                 for i in range(len(group_teams)):
                     for j in range(i + 1, len(group_teams)):
                         a, b = group_teams[i], group_teams[j]
-                        probs = self._get_match_probs(a, b)
-                        
-                        # Simulate goals
-                        avg_total = 2.5
-                        lam_a = max(0.2, (avg_total + probs["xgd"]) / 2)
-                        lam_b = max(0.2, (avg_total - probs["xgd"]) / 2)
-                        
-                        ga = np.random.poisson(lam_a)
-                        gb = np.random.poisson(lam_b)
+                        locked = self._get_locked_result(a, b, stage="GROUP_STAGE")
+                        if locked:
+                            ga, gb = locked
+                        else:
+                            probs = self._get_match_probs(a, b)
+
+                            # Simulate goals
+                            avg_total = 2.5
+                            lam_a = max(0.2, (avg_total + probs["xgd"]) / 2)
+                            lam_b = max(0.2, (avg_total - probs["xgd"]) / 2)
+
+                            ga = np.random.poisson(lam_a)
+                            gb = np.random.poisson(lam_b)
                         
                         standings[a]["gf"] += ga
                         standings[a]["gd"] += ga - gb
@@ -237,7 +305,7 @@ class TournamentSimulator:
             if len(current_round) < 32:
                 current_round.extend(advancing_thirds[:32 - len(current_round)])
             
-            round_names = ["r16", "qf", "sf", "final"]
+            round_names = ["r16", "qf", "sf", "final", "winner"]
             
             for _, rnd_name in enumerate(round_names):
                 if len(current_round) < 2:
@@ -246,39 +314,40 @@ class TournamentSimulator:
                 next_round = []
                 for i in range(0, len(current_round) - 1, 2):
                     a, b = current_round[i], current_round[i + 1]
-                    probs = self._get_match_probs(a, b)
-                    
-                    avg_total = 2.5
-                    lam_a = max(0.2, (avg_total + probs["xgd"]) / 2)
-                    lam_b = max(0.2, (avg_total - probs["xgd"]) / 2)
-                    
-                    ga = np.random.poisson(lam_a)
-                    gb = np.random.poisson(lam_b)
-                    
-                    # Knockout: extra time + penalties if drawn
-                    if ga == gb:
-                        et_a = np.random.poisson(max(0.1, lam_a / 3))
-                        et_b = np.random.poisson(max(0.1, lam_b / 3))
-                        ga += et_a
-                        gb += et_b
-                    
-                    if ga == gb:
-                        # Penalties
-                        pk_adv = 0.5 + (probs["win"] - probs["loss"]) * 0.1
-                        if np.random.random() < pk_adv:
-                            ga += 1
-                        else:
-                            gb += 1
+                    locked = self._get_locked_result(a, b)
+                    if locked:
+                        ga, gb = locked
+                    else:
+                        probs = self._get_match_probs(a, b)
+
+                        avg_total = 2.5
+                        lam_a = max(0.2, (avg_total + probs["xgd"]) / 2)
+                        lam_b = max(0.2, (avg_total - probs["xgd"]) / 2)
+
+                        ga = np.random.poisson(lam_a)
+                        gb = np.random.poisson(lam_b)
+
+                        # Knockout: extra time + penalties if drawn
+                        if ga == gb:
+                            et_a = np.random.poisson(max(0.1, lam_a / 3))
+                            et_b = np.random.poisson(max(0.1, lam_b / 3))
+                            ga += et_a
+                            gb += et_b
+
+                        if ga == gb:
+                            # Penalties
+                            pk_adv = 0.5 + (probs["win"] - probs["loss"]) * 0.1
+                            if np.random.random() < pk_adv:
+                                ga += 1
+                            else:
+                                gb += 1
                     
                     winner = a if ga > gb else b
-                    next_round.append(winner)
                     counters[winner][rnd_name] += 1
+                    if rnd_name != "winner":
+                        next_round.append(winner)
                 
                 current_round = next_round
-            
-            # Winner
-            if current_round:
-                counters[current_round[0]]["winner"] += 1
 
         # Convert counts to percentages
         n = float(num_iterations)
@@ -330,7 +399,20 @@ class TournamentSimulator:
         Returns:
             Dict mapping team_name -> {round_name: probability %}
         """
-        if self._cpp_available:
+        if self.structure.locked_results:
+            py_iters = min(num_iterations, 100_000)
+            if self._cpp_available:
+                logger.warning(
+                    "Locked match results are present; using Python simulation "
+                    "because the compiled engine does not accept fixed scores yet."
+                )
+            if py_iters < num_iterations:
+                logger.info(f"Python live-update mode: reducing to {py_iters:,} iterations")
+            self.results = self.simulate_python(
+                num_iterations=py_iters,
+                seed=seed,
+            )
+        elif self._cpp_available:
             self.results = self.simulate_cpp(
                 num_iterations=num_iterations,
                 num_threads=MC_NUM_THREADS,

@@ -19,10 +19,10 @@ class TournamentStructure:
     
     48 teams in 12 groups of 4.
     Top 2 per group (24) + 8 best third-placed teams = 32 advance.
-    Then: R32 → R16 → QF → SF → Final.
+    Then: R32 -> R16 -> QF -> SF -> Final.
     
     This class handles:
-    - Team name ↔ ID mapping (C++ engine uses integer IDs)
+    - Team name <-> ID mapping (C++ engine uses integer IDs)
     - Group structure encoding
     - Bracket path definitions
     - "Lock-in" of actual results as the tournament progresses
@@ -30,7 +30,7 @@ class TournamentStructure:
 
     def __init__(self):
         """Initialize the tournament structure from config."""
-        # Build name ↔ id mapping
+        # Build name <-> id mapping
         self.team_to_id: dict[str, int] = {}
         self.id_to_team: dict[int, str] = {}
         
@@ -72,6 +72,7 @@ class TournamentStructure:
             score_b: Goals scored by team_b
             stage: Tournament stage
         """
+        stage = str(stage).upper().replace(" ", "_")
         key = f"{team_a}|{team_b}"
         self.locked_results[key] = {
             "team_a": team_a,
@@ -84,8 +85,8 @@ class TournamentStructure:
 
     def format_bracket_results(self, raw_results: dict) -> dict:
         """
-        Convert raw simulation results (team_id → probabilities) 
-        to human-readable format (team_name → probabilities).
+        Convert raw simulation results (team_id -> probabilities)
+        to human-readable format (team_name -> probabilities).
         
         Args:
             raw_results: Dict from C++ engine {team_id: {round: probability}}

@@ -21,6 +21,11 @@ output/
 catboost_info/
 build/
 *.log
+diff_review.txt
+.pytest_cache/
+.ruff_cache/
+dist/
+*.egg-info/
 
 # IDEs
 .vscode/

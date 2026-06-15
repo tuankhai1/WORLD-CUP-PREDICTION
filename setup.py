@@ -9,7 +9,7 @@ Usage:
 import os
 import sys
 import platform
-from setuptools import setup, Extension
+from setuptools import setup
 
 # Try to import pybind11
 try:

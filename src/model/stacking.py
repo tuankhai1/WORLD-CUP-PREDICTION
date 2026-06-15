@@ -28,7 +28,7 @@ class StackedEnsemble:
     Architecture:
     - Level 0: CatBoost, XGBoost, LightGBM
       Each produces: [P(Loss), P(Draw), P(Win)] + expected_goal_diff
-      = 4 outputs per model × 3 models = 12 meta-features
+      = 4 outputs per model x 3 models = 12 meta-features
     
     - Level 1: Logistic Regression (classification) + Ridge (regression)
       Learns optimal blending weights from OOF predictions
@@ -103,13 +103,13 @@ class StackedEnsemble:
                 base_ll = log_loss(y_wdl[mask], oof_proba[mask], labels=[0, 1, 2])
                 base_acc = accuracy_score(y_wdl[mask], oof_proba[mask].argmax(axis=1))
                 base_mse = mean_squared_error(y_gd[mask], oof_gd[mask])
-                logger.info(f"  {model.name} OOF — LogLoss: {base_ll:.4f}, "
+                logger.info(f"  {model.name} OOF - LogLoss: {base_ll:.4f}, "
                           f"Accuracy: {base_acc:.3f}, GD-MSE: {base_mse:.4f}")
                 self.training_metrics[f"{model.name}_logloss"] = base_ll
                 self.training_metrics[f"{model.name}_accuracy"] = base_acc
 
         # Step 2: Stack into meta-features
-        # Shape: (n_samples, 12) = 3 models × (3 probs + 1 gd)
+        # Shape: (n_samples, 12) = 3 models x (3 probs + 1 gd)
         meta_features = np.hstack(
             [proba for proba in oof_probas] + 
             [gd.reshape(-1, 1) for gd in oof_gds]
@@ -173,7 +173,7 @@ class StackedEnsemble:
             
         Returns:
             Dict with keys:
-            - proba: ndarray of shape (n, 3) — [P(Loss), P(Draw), P(Win)]
+            - proba: ndarray of shape (n, 3) - [P(Loss), P(Draw), P(Win)]
             - pred: ndarray of predicted classes
             - goal_diff: ndarray of expected goal differentials
         """

@@ -133,7 +133,7 @@ def compute_form_features(matches: pd.DataFrame,
             })
 
         if not records:
-            # No match history — use neutral defaults
+            # No match history - use neutral defaults
             team_features[team] = {
                 f"recent_form_{w}": 1.0 for w in windows
             }

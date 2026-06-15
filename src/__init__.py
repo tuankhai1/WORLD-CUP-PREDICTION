@@ -1,1 +1,1 @@
-# WC Prediction — Source Package
+# WC Prediction source package

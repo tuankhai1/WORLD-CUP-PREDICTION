@@ -30,7 +30,7 @@
 #include <omp.h>
 #endif
 
-// ─── Data Structures ────────────────────────────────────────────────────────
+// Data structures
 
 struct MatchProbs {
     double win;     // P(team_a wins)
@@ -67,7 +67,7 @@ struct SimulationResults {
     std::unordered_map<int, long long> winner;
 };
 
-// ─── Utility Functions ──────────────────────────────────────────────────────
+// Utility functions
 
 static int poisson_sample(double lambda, std::mt19937& rng) {
     /*
@@ -91,7 +91,7 @@ static int poisson_sample(double lambda, std::mt19937& rng) {
     return k - 1;
 }
 
-// ─── Match Simulation ───────────────────────────────────────────────────────
+// Match simulation
 
 static MatchResult simulate_match(const MatchProbs& probs, std::mt19937& rng) {
     /*
@@ -111,8 +111,8 @@ static MatchResult simulate_match(const MatchProbs& probs, std::mt19937& rng) {
     const double avg_total = 2.5;
     
     // Derive individual team expected goals from xGD
-    // lambda_a + lambda_b ≈ avg_total
-    // lambda_a - lambda_b ≈ xgd
+    // lambda_a + lambda_b ~= avg_total
+    // lambda_a - lambda_b ~= xgd
     double lambda_a = (avg_total + probs.xgd) / 2.0;
     double lambda_b = (avg_total - probs.xgd) / 2.0;
     
@@ -163,7 +163,7 @@ static MatchResult simulate_knockout_match(const MatchProbs& probs, std::mt19937
     return result;
 }
 
-// ─── Group Stage Simulation ─────────────────────────────────────────────────
+// Group stage simulation
 
 static bool compare_standings(const TeamStanding& a, const TeamStanding& b) {
     /* FIFA tiebreaker rules for group stage */
@@ -247,7 +247,7 @@ static GroupResult simulate_group(
     return gr;
 }
 
-// ─── Full Tournament Simulation ─────────────────────────────────────────────
+// Full tournament simulation
 
 struct TournamentConfig {
     int num_groups;                        // 12
@@ -264,7 +264,7 @@ static int simulate_full_tournament(
 ) {
     /*
      * Simulate the complete 2026 FIFA World Cup:
-     * 1. Group Stage: 12 groups of 4 → top 2 + 8 best 3rd advance
+     * 1. Group Stage: 12 groups of 4 -> top 2 + 8 best 3rd advance
      * 2. Round of 32
      * 3. Round of 16
      * 4. Quarter-finals
@@ -274,7 +274,7 @@ static int simulate_full_tournament(
      * Returns the winning team_id.
      */
 
-    // ── Phase 1: Group Stage ────────────────────────────────────────────
+    // Phase 1: group stage
     std::vector<GroupResult> group_results(config.num_groups);
     std::vector<int> group_winners;      // 12 group winners
     std::vector<int> group_runners;      // 12 runners-up
@@ -311,7 +311,7 @@ static int simulate_full_tournament(
         results.group_exit[third_placed[i].team_id]++;
     }
 
-    // ── Phase 2: Build Round of 32 bracket ──────────────────────────────
+    // Phase 2: build Round of 32 bracket
     // 32 teams: 12 winners + 12 runners-up + 8 best thirds
     std::vector<std::pair<int, int>> r32_matchups;
     
@@ -363,7 +363,7 @@ static int simulate_full_tournament(
         }
     }
 
-    // ── Phase 3: Knockout rounds ────────────────────────────────────────
+    // Phase 3: knockout rounds
     auto play_knockout_round = [&](
         const std::vector<std::pair<int, int>>& matchups,
         std::unordered_map<int, long long>& next_round_counter
@@ -393,7 +393,7 @@ static int simulate_full_tournament(
         return winners;
     };
 
-    // Round of 32 → Round of 16
+    // Round of 32 -> Round of 16
     auto r16_teams = play_knockout_round(r32_matchups, results.round_of_16);
     
     // Build R16 matchups
@@ -402,7 +402,7 @@ static int simulate_full_tournament(
         r16_matchups.push_back({r16_teams[i], r16_teams[i + 1]});
     }
 
-    // Round of 16 → Quarter-finals
+    // Round of 16 -> Quarter-finals
     auto qf_teams = play_knockout_round(r16_matchups, results.quarter_final);
     
     // Build QF matchups
@@ -411,7 +411,7 @@ static int simulate_full_tournament(
         qf_matchups.push_back({qf_teams[i], qf_teams[i + 1]});
     }
 
-    // Quarter-finals → Semi-finals
+    // Quarter-finals -> Semi-finals
     auto sf_teams = play_knockout_round(qf_matchups, results.semi_final);
     
     // Build SF matchups
@@ -420,7 +420,7 @@ static int simulate_full_tournament(
         sf_matchups.push_back({sf_teams[i], sf_teams[i + 1]});
     }
 
-    // Semi-finals → Final
+    // Semi-finals -> Final
     auto finalists = play_knockout_round(sf_matchups, results.final_reached);
     
     if (finalists.size() >= 2) {
@@ -439,7 +439,7 @@ static int simulate_full_tournament(
     return -1;  // Should not happen
 }
 
-// ─── Main Simulation Runner ─────────────────────────────────────────────────
+// Main simulation runner
 
 SimulationResults run_simulation(
     const TournamentConfig& config,

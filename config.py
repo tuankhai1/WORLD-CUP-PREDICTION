@@ -52,36 +52,6 @@ for group_name, teams in GROUPS.items():
     for team in teams:
         TEAM_TO_GROUP[team] = group_name
 
-# After group stage: 24 teams qualify (12 × top-2) + 8 best 3rd-placed = 32
-# Round of 32 matchups based on FIFA's official bracket paths
-# Format: (group_position_1, group_position_2)
-# Positions encoded as "A1" = Group A winner, "A2" = Group A runner-up, etc.
-# "3rd_X" = best 3rd-place from a set of groups
-
-R32_MATCHUPS = [
-    ("A1", "3rd_CDE"),    # Match 49
-    ("B1", "3rd_ADF"),    # Match 50
-    ("C1", "3rd_ABF"),    # Match 51
-    ("D1", "3rd_BEF"),    # Match 52
-    ("E1", "3rd_ACD"),    # Match 53
-    ("F1", "3rd_BCD"),    # Match 54
-    ("G1", "H2"),         # Match 55
-    ("H1", "G2"),         # Match 56
-    ("I1", "J2"),         # Match 57
-    ("J1", "I2"),         # Match 58
-    ("K1", "L2"),         # Match 59
-    ("L1", "K2"),         # Match 60
-    ("A2", "B2"),         # Match 61
-    ("C2", "D2"),         # Match 62
-    ("E2", "F2"),         # Match 63
-    ("G2", "3rd_IJL"),    # Match 64
-    ("H2", "3rd_GKL"),    # Match 65
-    ("I2", "3rd_GHK"),    # Match 66
-    ("J2", "3rd_GIJ"),    # Match 67
-    ("K2", "3rd_HIJ"),    # Match 68
-    ("L2", "3rd_GHL"),    # Match 69
-]
-
 FIFA_RANKINGS = {
     "Argentina": 1877.27,
     "Spain": 1874.71,
@@ -170,25 +140,7 @@ MC_DEFAULT_ITERATIONS = 1_000_000
 MC_DEFAULT_SEED = 42
 MC_NUM_THREADS = os.cpu_count() or 4
 
-DASHBOARD_TITLE = "⚽ 2026 FIFA World Cup Predictions"
-DASHBOARD_THEME = "dark"
-COLOR_PALETTE = {
-    "bg_primary": "#0a0a1a",
-    "bg_secondary": "#12122a",
-    "bg_card": "rgba(255, 255, 255, 0.05)",
-    "text_primary": "#e0e0ff",
-    "text_secondary": "#8888aa",
-    "accent_gold": "#ffd700",
-    "accent_blue": "#4a9eff",
-    "accent_green": "#00e676",
-    "accent_red": "#ff5252",
-    "gradient_start": "#1a1a3e",
-    "gradient_end": "#0a0a1a",
-    "win_color": "#00e676",
-    "draw_color": "#ffab40",
-    "loss_color": "#ff5252",
-}
-
+DASHBOARD_TITLE = "2026 FIFA World Cup Predictions"
 CONFEDERATIONS = {
     "UEFA": [
         "Spain", "France", "England", "Portugal", "Belgium", "Germany",
@@ -229,6 +181,7 @@ TEAM_ALIASES = {
     "Korea Republic": "South Korea",
     "Korea, Republic of": "South Korea",
     "Korea DPR": "North Korea",
+    "Czechia": "Czech Republic",
     "IR Iran": "Iran",
     "Congo DR": "DR Congo",
     "Democratic Republic of Congo": "DR Congo",

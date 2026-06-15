@@ -149,7 +149,7 @@ def compute_rolling_xg_features(matches: pd.DataFrame,
         features = {"date": team_df["date"], "match_idx": team_df["match_idx"]}
         
         for w in windows:
-            # Rolling xG created (shift to avoid leakage — don't include current match)
+            # Rolling xG created (shift to avoid leakage - do not include current match)
             features[f"rolling_xg_for_{w}"] = (
                 team_df["xg_for"].shift(1).rolling(w, min_periods=1).mean()
             )
@@ -170,7 +170,7 @@ def compute_rolling_xg_features(matches: pd.DataFrame,
                 team_df["goals_against"].shift(1).rolling(w, min_periods=1).mean()
             )
 
-        # xG overperformance (finishing quality / luck) — cumulative
+        # xG overperformance (finishing quality / luck) - cumulative
         cum_goals = team_df["goals_for"].shift(1).expanding().sum()
         cum_xg = team_df["xg_for"].shift(1).expanding().sum()
         features["xg_overperformance"] = (cum_goals - cum_xg) / (

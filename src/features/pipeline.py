@@ -77,23 +77,24 @@ class FeaturePipeline:
         matches["date"] = pd.to_datetime(matches["date"])
         matches_modern = matches[matches["date"] >= "2010-01-01"].copy()
         
-        # 1. Elo ratings — process all matches chronologically
+        # 1. Elo ratings - process all matches chronologically
         logger.info("  Computing Elo ratings (Modern Era Reset 2010+)...")
         matches_with_elo = self.elo_system.process_matches(matches_modern)
         elo_ratings = self.elo_system.get_all_ratings()
         form_elo_ratings = self.elo_system.get_all_form_ratings()
+        finished_with_elo = matches_with_elo.dropna(subset=["home_score", "away_score"]).copy()
 
         # 2. Rolling xG features
         logger.info("  Computing rolling xG features...")
-        xg_features = compute_rolling_xg_features(matches_with_elo)
+        xg_features = compute_rolling_xg_features(finished_with_elo)
 
         # 3. Pressing intensity features
         logger.info("  Computing pressing features...")
-        pressing_features = compute_pressing_features(matches_with_elo, team_stats)
+        pressing_features = compute_pressing_features(finished_with_elo, team_stats)
 
         # 4. Form and momentum features
         logger.info("  Computing form features...")
-        form_features = compute_form_features(matches_with_elo)
+        form_features = compute_form_features(finished_with_elo)
 
         # 5. Encoding features
         logger.info("  Computing encoding features...")
@@ -122,7 +123,7 @@ class FeaturePipeline:
             
             features["club_form_power"] = club_form_power_map.get(team, 0.0)
             
-            # Rolling xG — get the latest values
+            # Rolling xG - get the latest values
             if team in xg_features:
                 team_xg = xg_features[team]
                 if not team_xg.empty:
@@ -326,7 +327,7 @@ class FeaturePipeline:
         # Handle any NaN/inf
         X = X.replace([np.inf, -np.inf], np.nan).fillna(0)
         
-        logger.info(f"Training matrix: {X.shape[0]} samples × {X.shape[1]} features")
+        logger.info(f"Training matrix: {X.shape[0]} samples x {X.shape[1]} features")
         
         # Save
         X.to_parquet(PROCESSED_DATA_DIR / "feature_matrix.parquet", index=False)
