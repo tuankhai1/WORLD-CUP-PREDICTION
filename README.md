@@ -15,6 +15,8 @@ training metrics, and an explanatory bracket view.
 - Feature engineering for Elo, short-term form Elo, rolling goals/xG,
   pressing proxies, recent momentum, confederation encodings, FIFA ratings,
   and squad club-form power.
+- Model benchmarking across baselines, neural networks, tree models, boosted
+  models, and an ensemble.
 - Stacked ensemble model using CatBoost, XGBoost, LightGBM, logistic
   regression, Ridge regression, and probability calibration.
 - Monte Carlo tournament simulator with a C++/pybind11 engine when compiled
@@ -22,123 +24,22 @@ training metrics, and an explanatory bracket view.
 - Update workflow for refreshing local results and regenerating predictions
   without retraining the full model.
 
-## Repository Structure
+## Quick Start
 
-```text
-.
-|-- config.py                  # Central tournament, model, Elo, and path settings
-|-- main.py                    # CLI entry point for full, quick, update, predict, simulate, dashboard modes
-|-- update.py                  # Daily/update workflow wrapper
-|-- setup.py                   # Builds the optional C++ Monte Carlo extension
-|-- requirements.txt           # Python dependencies
-|-- README.md                  # Project documentation
-|-- data/
-|   |-- README.md              # Detailed raw data requirements
-|   |-- raw/                   # Local raw inputs, not tracked by git
-|   |-- processed/             # Generated parquet feature/data artifacts
-|   `-- cache/                 # Local ingestion/cache files
-|-- models/                    # Trained models, feature columns, and pipeline state
-|-- output/                    # Generated dashboard and simulation JSON
-|-- catboost_info/             # CatBoost training logs
-|-- build/                     # Native extension build output
-`-- src/
-    |-- data_ingestion/
-    |   |-- github_loader.py           # Downloads international results into data/raw
-    |   |-- data_merger.py             # Standardizes and merges historical + local 2026 data
-    |   `-- player_stats_loader.py     # Builds squad/player club-form ratings
-    |-- features/
-    |   |-- elo_rating.py              # Long-term Elo and fast-decay form Elo
-    |   |-- pipeline.py                # End-to-end feature matrix builder
-    |   |-- rolling_xg.py              # Rolling goals/xG estimates
-    |   |-- pressing_intensity.py      # Pressing-style proxy features
-    |   |-- form_momentum.py           # Recent form, streak, trend features
-    |   `-- encoding.py                # Team/confederation encodings
-    |-- model/
-    |   |-- base_models.py             # CatBoost, XGBoost, LightGBM wrappers
-    |   |-- optuna_tuning.py           # Hyperparameter tuning
-    |   |-- stacking.py                # Stacked ensemble and calibration
-    |   `-- predict.py                 # Match prediction and probability matrix generation
-    |-- simulation/
-    |   |-- tournament.py              # Tournament/group definitions and result locking
-    |   |-- simulator.py               # Python/C++ simulation orchestrator
-    |   |-- mc_engine.cpp              # Native Monte Carlo engine implementation
-    |   `-- mc_bindings.cpp            # pybind11 bindings
-    `-- output/
-        `-- dashboard.py               # HTML dashboard renderer
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+
+# Optional but recommended for large Monte Carlo runs
+python setup.py build_ext --inplace
+
+# Smoke test the full pipeline
+python main.py --mode test --iterations 10000
 ```
 
-## Architecture
-
-The system is organized as a layered prediction pipeline.
-
-### 1. Data Ingestion
-
-`GithubDataLoader` refreshes historical international results from
-`martj42/international_results`. `DataMerger` then combines those results with
-local 2026 World Cup fixtures/results from `data/raw/wc2026_matches.parquet`
-when that file exists. Local 2026 rows are loaded first, so they win
-deduplication for the same date and teams.
-
-`PlayerStatsLoader` computes a squad-level `club_form_power` rating. If
-`data/raw/squad_players.csv` exists, the loader performs a roster-aware join
-between official squad players and current-season club statistics. If not, it
-falls back to a nationality-pool method.
-
-### 2. Feature Engineering
-
-`FeaturePipeline` converts merged match data into team features and matchup
-vectors. Elo is processed chronologically from the modern era, while the
-machine-learning training set is focused on the current World Cup cycle.
-
-Each matchup is represented from `team_a`'s perspective using differences such
-as Elo difference, form-Elo difference, FIFA-rating difference, xG difference,
-pressing difference, recent-form difference, and club-form-power difference.
-Absolute team values are also retained for the tree models.
-
-### 3. Modeling
-
-The modeling layer tunes and trains three base learners:
-
-- CatBoost
-- XGBoost
-- LightGBM
-
-Each base model predicts both win/draw/loss probabilities and expected goal
-differential. Their out-of-fold outputs become meta-features for a second-level
-stacked model:
-
-- Logistic regression for the final win/draw/loss blend.
-- Ridge regression for expected goal differential.
-- Sigmoid calibration for probability calibration.
-
-### 4. Match Prediction
-
-`MatchPredictor` loads the saved feature pipeline and ensemble, predicts any
-ordered matchup, and then symmetry-corrects the result by averaging
-`predict(A, B)` with the complement of `predict(B, A)`. It also generates a
-complete probability matrix for every tournament-team pairing.
-
-### 5. Tournament Simulation
-
-`TournamentSimulator` consumes the probability matrix and simulates the full
-48-team tournament:
-
-- Group-stage round robins.
-- Top two teams from each group.
-- Eight best third-place teams.
-- Knockout rounds with extra time and penalties for unresolved draws.
-- Optional locking of completed 2026 tournament results from local data.
-
-When the native `mc_simulation` module is available and no locked results are
-present, the simulator uses the C++ backend. Otherwise, it falls back to the
-Python simulator. In live-update mode, the Python simulator is capped at
-100,000 iterations to keep runs practical.
-
-### 6. Output
-
-`DashboardGenerator` writes `output/dashboard.html`, using simulation
-aggregates, group-match predictions, pairwise probabilities, and model metrics.
-Simulation results are also saved as `output/simulation_results.json`.
+The smoke test ingests data, builds features, trains models with test-mode
+settings, simulates the tournament, and writes `output/dashboard.html`.
 
 ## Data Requirements
 
@@ -154,8 +55,8 @@ training workflow, prepare the local inputs under `data/raw/`.
 | `player_stats/*.csv` | Optional | Extra league/player exports beyond the main player file. |
 | `squad_players.csv` | Optional | Normalized official roster table for more accurate squad-aware form. |
 
-See `data/README.md` for the expected columns and the fallback behavior for
-player and squad statistics.
+See `data/README.md` for the expected columns and fallback behavior for player
+and squad statistics.
 
 ## Installation
 
@@ -191,7 +92,41 @@ simulation fallback, but large Monte Carlo runs will be slower.
 On Windows, the C++ build expects a compiler toolchain compatible with
 `/std:c++17` and OpenMP. On Linux/macOS, it uses `-std=c++17` and `-fopenmp`.
 
-## Step-by-Step Implementation Guide
+## Command Line Reference
+
+```bash
+# Complete pipeline: ingest, engineer features, tune, train, simulate, dashboard
+python main.py --mode full --iterations 1000000
+
+# Faster model run with fewer Optuna trials
+python main.py --mode quick --iterations 100000
+
+# Medium model run with an intermediate number of Optuna trials
+python main.py --mode medium --iterations 250000
+
+# Very fast smoke test
+python main.py --mode test --iterations 10000
+
+# Update saved model predictions with refreshed data and locked results
+python main.py --mode update --iterations 100000
+
+# Predict a specific matchup
+python main.py --mode predict --teams Spain Brazil
+
+# Re-run simulation only using saved model artifacts
+python main.py --mode simulate --iterations 1000000
+
+# Rebuild dashboard HTML from saved simulation/model artifacts
+python main.py --mode dashboard
+
+# Benchmark base models and refresh the README result table
+python main.py --mode benchmark --benchmark-cv time --benchmark-folds 5
+
+# Paper-style 10-fold stratified K-fold benchmark
+python main.py --mode benchmark --benchmark-cv kfold --benchmark-folds 10
+```
+
+## Pipeline Workflow
 
 ### Step 1: Fetch or place raw data
 
@@ -302,39 +237,155 @@ python main.py --mode update --iterations 100000
 The simulator locks finished 2026 rows when they include explicit tournament
 metadata such as `season = 2026`, a non-empty `stage`, and a finished status.
 
-## Command Line Reference
+## Architecture
 
-```bash
-# Complete pipeline: ingest, engineer features, tune, train, simulate, dashboard
-python main.py --mode full --iterations 1000000
+The system is organized as a layered prediction pipeline.
 
-# Faster model run with fewer Optuna trials
-python main.py --mode quick --iterations 100000
+### 1. Data Ingestion
 
-# Medium model run with an intermediate number of Optuna trials
-python main.py --mode medium --iterations 250000
+`GithubDataLoader` refreshes historical international results from
+`martj42/international_results`. `DataMerger` then combines those results with
+local 2026 World Cup fixtures/results from `data/raw/wc2026_matches.parquet`
+when that file exists. Local 2026 rows are loaded first, so they win
+deduplication for the same date and teams.
 
-# Very fast smoke test
-python main.py --mode test --iterations 10000
+`PlayerStatsLoader` computes a squad-level `club_form_power` rating. If
+`data/raw/squad_players.csv` exists, the loader performs a roster-aware join
+between official squad players and current-season club statistics. If not, it
+falls back to a nationality-pool method.
 
-# Update saved model predictions with refreshed data and locked results
-python main.py --mode update --iterations 100000
+### 2. Feature Engineering
 
-# Predict a specific matchup
-python main.py --mode predict --teams Spain Brazil
+`FeaturePipeline` converts merged match data into team features and matchup
+vectors. Elo is processed chronologically from the modern era, while the
+machine-learning training set is focused on the current World Cup cycle.
 
-# Re-run simulation only using saved model artifacts
-python main.py --mode simulate --iterations 1000000
+Each matchup is represented from `team_a`'s perspective using differences such
+as Elo difference, form-Elo difference, FIFA-rating difference, xG difference,
+pressing difference, recent-form difference, and club-form-power difference.
+Absolute team values are also retained for the tree models.
 
-# Rebuild dashboard HTML from saved simulation/model artifacts
-python main.py --mode dashboard
+### 3. Modeling
 
-# Benchmark base models and refresh the README result table
-python main.py --mode benchmark --benchmark-cv time --benchmark-folds 5
+The modeling layer tunes and trains three base learners:
 
-# Paper-style 10-fold stratified K-fold benchmark
-python main.py --mode benchmark --benchmark-cv kfold --benchmark-folds 10
+- CatBoost
+- XGBoost
+- LightGBM
+
+Each base model predicts both win/draw/loss probabilities and expected goal
+differential. Their out-of-fold outputs become meta-features for a second-level
+stacked model:
+
+- Logistic regression for the final win/draw/loss blend.
+- Ridge regression for expected goal differential.
+- Sigmoid calibration for probability calibration.
+
+### 4. Match Prediction
+
+`MatchPredictor` loads the saved feature pipeline and ensemble, predicts any
+ordered matchup, and then symmetry-corrects the result by averaging
+`predict(A, B)` with the complement of `predict(B, A)`. It also generates a
+complete probability matrix for every tournament-team pairing.
+
+### 5. Tournament Simulation
+
+`TournamentSimulator` consumes the probability matrix and simulates the full
+48-team tournament:
+
+- Group-stage round robins.
+- Top two teams from each group.
+- Eight best third-place teams.
+- Knockout rounds with extra time and penalties for unresolved draws.
+- Optional locking of completed 2026 tournament results from local data.
+
+When the native `mc_simulation` module is available and no locked results are
+present, the simulator uses the C++ backend. Otherwise, it falls back to the
+Python simulator. In live-update mode, the Python simulator is capped at
+100,000 iterations to keep runs practical.
+
+### 6. Output
+
+`DashboardGenerator` writes `output/dashboard.html`, using simulation
+aggregates, group-match predictions, pairwise probabilities, and model metrics.
+Simulation results are also saved as `output/simulation_results.json`.
+
+## Repository Structure
+
+```text
+.
+|-- config.py                  # Central tournament, model, Elo, and path settings
+|-- main.py                    # CLI entry point for full, quick, update, predict, simulate, dashboard modes
+|-- update.py                  # Daily/update workflow wrapper
+|-- setup.py                   # Builds the optional C++ Monte Carlo extension
+|-- requirements.txt           # Python dependencies
+|-- README.md                  # Project documentation
+|-- data/
+|   |-- README.md              # Detailed raw data requirements
+|   |-- raw/                   # Local raw inputs, not tracked by git
+|   |-- processed/             # Generated parquet feature/data artifacts
+|   `-- cache/                 # Local ingestion/cache files
+|-- models/                    # Trained models, feature columns, and pipeline state
+|-- output/                    # Generated dashboard and simulation JSON
+|-- catboost_info/             # CatBoost training logs
+|-- build/                     # Native extension build output
+`-- src/
+    |-- data_ingestion/
+    |   |-- github_loader.py           # Downloads international results into data/raw
+    |   |-- data_merger.py             # Standardizes and merges historical + local 2026 data
+    |   `-- player_stats_loader.py     # Builds squad/player club-form ratings
+    |-- features/
+    |   |-- elo_rating.py              # Long-term Elo and fast-decay form Elo
+    |   |-- pipeline.py                # End-to-end feature matrix builder
+    |   |-- rolling_xg.py              # Rolling goals/xG estimates
+    |   |-- pressing_intensity.py      # Pressing-style proxy features
+    |   |-- form_momentum.py           # Recent form, streak, trend features
+    |   `-- encoding.py                # Team/confederation encodings
+    |-- model/
+    |   |-- base_models.py             # CatBoost, XGBoost, LightGBM wrappers
+    |   |-- benchmark.py               # Base model benchmark table generation
+    |   |-- optuna_tuning.py           # Hyperparameter tuning
+    |   |-- stacking.py                # Stacked ensemble and calibration
+    |   `-- predict.py                 # Match prediction and probability matrix generation
+    |-- simulation/
+    |   |-- tournament.py              # Tournament/group definitions and result locking
+    |   |-- simulator.py               # Python/C++ simulation orchestrator
+    |   |-- mc_engine.cpp              # Native Monte Carlo engine implementation
+    |   `-- mc_bindings.cpp            # pybind11 bindings
+    `-- output/
+        `-- dashboard.py               # HTML dashboard renderer
 ```
+
+## Model Benchmark Results
+
+<!-- MODEL_BENCHMARK_START -->
+Latest benchmark: `5`-fold `TimeSeriesSplit` on `data/processed/feature_matrix.parquet`.
+
+| Category | Model | CV accuracy (%) | F1 micro (%) | AUROC micro | Logloss |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Baseline | Class-prior baseline | 47.35 | 47.35 | 0.619 | 1.0535 |
+| Baseline | Elo/FIFA Logistic Regression | 57.64 | 57.64 | 0.749 | 0.9189 |
+| Baseline | Logistic Regression | 58.35 | 58.35 | 0.756 | 0.9205 |
+| Neural network | Neural Net (MLP) | 58.40 | 58.40 | 0.753 | 0.9169 |
+| Tree-based | Decision Tree | 56.30 | 56.30 | 0.732 | 1.1952 |
+| Tree-based | Random Forest | 56.75 | 56.75 | 0.746 | 0.9304 |
+| Tree-based | Extra Trees | 56.80 | 56.80 | 0.736 | 0.9575 |
+| Tree-based | Gradient Boosting tree | 58.24 | 58.24 | 0.757 | 0.9108 |
+| Tree-based | AdaBoost tree | 58.61 | 58.61 | 0.758 | 1.0083 |
+| Tree-based | HistGradientBoosting | 56.22 | 56.22 | 0.740 | 1.0886 |
+| Tree-based | CatBoost | 59.48 | 59.48 | 0.763 | 0.8999 |
+| Tree-based | XGBoost | 58.69 | 58.69 | 0.758 | 0.9100 |
+| Tree-based | LightGBM | 57.56 | 57.56 | 0.749 | 0.9347 |
+| Ultimate ensemble | Ultimate Ensemble (weighted soft vote) | 59.06 | 59.06 | 0.762 | 0.9024 |
+<!-- MODEL_BENCHMARK_END -->
+
+The default benchmark uses `TimeSeriesSplit` because match data is temporal:
+models should train on earlier matches and validate on later matches. A
+10-fold stratified K-fold run is available for comparison with papers or
+classroom-style result tables, but it can be optimistic because future-era
+matches are allowed to help train folds that validate on earlier-era matches.
+Use K-fold for broad model comparison, not as the final tournament-selection
+metric.
 
 ## Mathematical Notes
 
@@ -448,37 +499,6 @@ P<sub>club</sub> = 0.65 &times; mean(top XI player form) + 0.35 &times; mean(dep
 
 This value is written as `club_form_power` and included in the team feature
 matrix.
-
-## Model Benchmark Results
-
-<!-- MODEL_BENCHMARK_START -->
-Latest benchmark: `5`-fold `TimeSeriesSplit` on `data/processed/feature_matrix.parquet`.
-
-| Category | Model | CV accuracy (%) | F1 micro (%) | AUROC micro | Logloss |
-| --- | --- | ---: | ---: | ---: | ---: |
-| Baseline | Class-prior baseline | 47.35 | 47.35 | 0.619 | 1.0535 |
-| Baseline | Elo/FIFA Logistic Regression | 57.64 | 57.64 | 0.749 | 0.9189 |
-| Baseline | Logistic Regression | 58.35 | 58.35 | 0.756 | 0.9205 |
-| Neural network | Neural Net (MLP) | 58.40 | 58.40 | 0.753 | 0.9169 |
-| Tree-based | Decision Tree | 56.30 | 56.30 | 0.732 | 1.1952 |
-| Tree-based | Random Forest | 56.75 | 56.75 | 0.746 | 0.9304 |
-| Tree-based | Extra Trees | 56.80 | 56.80 | 0.736 | 0.9575 |
-| Tree-based | Gradient Boosting tree | 58.24 | 58.24 | 0.757 | 0.9108 |
-| Tree-based | AdaBoost tree | 58.61 | 58.61 | 0.758 | 1.0083 |
-| Tree-based | HistGradientBoosting | 56.22 | 56.22 | 0.740 | 1.0886 |
-| Tree-based | CatBoost | 59.48 | 59.48 | 0.763 | 0.8999 |
-| Tree-based | XGBoost | 58.69 | 58.69 | 0.758 | 0.9100 |
-| Tree-based | LightGBM | 57.56 | 57.56 | 0.749 | 0.9347 |
-| Ultimate ensemble | Ultimate Ensemble (weighted soft vote) | 59.06 | 59.06 | 0.762 | 0.9024 |
-<!-- MODEL_BENCHMARK_END -->
-
-The default benchmark uses `TimeSeriesSplit` because match data is temporal:
-models should train on earlier matches and validate on later matches. A
-10-fold stratified K-fold run is available for comparison with papers or
-classroom-style result tables, but it can be optimistic because future-era
-matches are allowed to help train folds that validate on earlier-era matches.
-Use K-fold for broad model comparison, not as the final tournament-selection
-metric.
 
 ## Modeling Caveats
 
