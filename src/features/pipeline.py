@@ -470,7 +470,24 @@ class FeaturePipeline:
         # uses build_team_features() to produce the latest tournament snapshot.
         matches = matches.copy()
         matches["date"] = pd.to_datetime(matches["date"])
-        matches_modern = matches[matches["date"] >= "2010-01-01"].copy()
+        training_matches = matches.copy()
+
+        scored_mask = training_matches[["home_score", "away_score"]].notna().all(axis=1)
+        if "use_for_model_training" in training_matches.columns:
+            excluded_mask = scored_mask & ~training_matches["use_for_model_training"].fillna(False).astype(bool)
+        elif "is_wc2026_result" in training_matches.columns:
+            excluded_mask = scored_mask & training_matches["is_wc2026_result"].fillna(False).astype(bool)
+        else:
+            excluded_mask = pd.Series(False, index=training_matches.index)
+
+        if excluded_mask.any():
+            logger.info(
+                "Excluding %s current WC 2026 result rows from model training labels",
+                int(excluded_mask.sum()),
+            )
+            training_matches = training_matches[~excluded_mask].copy()
+
+        matches_modern = training_matches[training_matches["date"] >= "2010-01-01"].copy()
 
         logger.info("  Computing shifted Elo snapshots for training...")
         elo_system = EloRatingSystem()

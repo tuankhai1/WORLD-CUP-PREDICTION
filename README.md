@@ -34,7 +34,12 @@ The system is organized as a layered prediction pipeline.
 `martj42/international_results`. `DataMerger` then combines those results with
 local 2026 World Cup fixtures/results from `data/raw/wc2026_matches.parquet`
 when that file exists. Local 2026 rows are loaded first, so they win
-deduplication for the same date and teams.
+deduplication for the same date and teams. The merger also tags source roles
+and exports `data/processed/wc2026_results.csv`, which contains scored 2026
+World Cup final-tournament matches only. Current WC 2026 final-tournament
+results are excluded from `data/processed/combined_international_results.csv`
+and from supervised training labels, but remain available for live team-form
+features and simulator result locking.
 
 `PlayerStatsLoader` computes a squad-level `club_form_power` rating. If
 `data/raw/squad_players.csv` exists, the loader performs a roster-aware join
@@ -263,6 +268,9 @@ After a successful run, check:
 - `models/feature_columns.csv`
 - `data/processed/feature_matrix.parquet`
 - `data/processed/targets.parquet`
+- `data/processed/wc2026_results.csv`
+- `data/processed/combined_international_results.csv`
+- `data/processed/data_sources.csv`
 - `output/simulation_results.json`
 - `output/dashboard.html`
 - `pipeline.log`
@@ -487,7 +495,12 @@ training workflow, prepare the local inputs under `data/raw/`.
 | `squad_players.csv` | Optional | Normalized official roster table for more accurate squad-aware form. |
 
 See `data/README.md` for the expected columns and fallback behavior for player
-and squad statistics.
+and squad statistics. After data merging, `data/processed/wc2026_results.csv`
+contains only scored WC 2026 final-tournament matches, while
+`data/processed/combined_international_results.csv` contains scored
+international history with those current WC rows removed. The
+`data/processed/data_sources.csv` manifest records which local source provides
+past results, current tournament results, standings, and player/squad features.
 
 ## Installation
 
