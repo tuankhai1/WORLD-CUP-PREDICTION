@@ -328,6 +328,12 @@ python main.py --mode simulate --iterations 1000000
 
 # Rebuild dashboard HTML from saved simulation/model artifacts
 python main.py --mode dashboard
+
+# Benchmark base models and refresh the README result table
+python main.py --mode benchmark --benchmark-cv time --benchmark-folds 5
+
+# Paper-style 10-fold stratified K-fold benchmark
+python main.py --mode benchmark --benchmark-cv kfold --benchmark-folds 10
 ```
 
 ## Mathematical Notes
@@ -442,6 +448,37 @@ P<sub>club</sub> = 0.65 &times; mean(top XI player form) + 0.35 &times; mean(dep
 
 This value is written as `club_form_power` and included in the team feature
 matrix.
+
+## Model Benchmark Results
+
+<!-- MODEL_BENCHMARK_START -->
+Latest benchmark: `5`-fold `TimeSeriesSplit` on `data/processed/feature_matrix.parquet`.
+
+| Category | Model | CV accuracy (%) | F1 micro (%) | AUROC micro | Logloss |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Baseline | Class-prior baseline | 47.35 | 47.35 | 0.619 | 1.0535 |
+| Baseline | Elo/FIFA Logistic Regression | 57.64 | 57.64 | 0.749 | 0.9189 |
+| Baseline | Logistic Regression | 58.35 | 58.35 | 0.756 | 0.9205 |
+| Neural network | Neural Net (MLP) | 58.40 | 58.40 | 0.753 | 0.9169 |
+| Tree-based | Decision Tree | 56.30 | 56.30 | 0.732 | 1.1952 |
+| Tree-based | Random Forest | 56.75 | 56.75 | 0.746 | 0.9304 |
+| Tree-based | Extra Trees | 56.80 | 56.80 | 0.736 | 0.9575 |
+| Tree-based | Gradient Boosting tree | 58.24 | 58.24 | 0.757 | 0.9108 |
+| Tree-based | AdaBoost tree | 58.61 | 58.61 | 0.758 | 1.0083 |
+| Tree-based | HistGradientBoosting | 56.22 | 56.22 | 0.740 | 1.0886 |
+| Tree-based | CatBoost | 59.48 | 59.48 | 0.763 | 0.8999 |
+| Tree-based | XGBoost | 58.69 | 58.69 | 0.758 | 0.9100 |
+| Tree-based | LightGBM | 57.56 | 57.56 | 0.749 | 0.9347 |
+| Ultimate ensemble | Ultimate Ensemble (weighted soft vote) | 59.06 | 59.06 | 0.762 | 0.9024 |
+<!-- MODEL_BENCHMARK_END -->
+
+The default benchmark uses `TimeSeriesSplit` because match data is temporal:
+models should train on earlier matches and validate on later matches. A
+10-fold stratified K-fold run is available for comparison with papers or
+classroom-style result tables, but it can be optimistic because future-era
+matches are allowed to help train folds that validate on earlier-era matches.
+Use K-fold for broad model comparison, not as the final tournament-selection
+metric.
 
 ## Modeling Caveats
 

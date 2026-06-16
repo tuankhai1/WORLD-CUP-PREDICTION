@@ -306,6 +306,19 @@ def run_dashboard_only():
     print(f"[OK] Dashboard generated: {path}")
 
 
+def run_model_benchmark(cv: str = "time", folds: int = 5, include_slow: bool = True):
+    """Benchmark base tabular classifiers and update the README table."""
+    from src.model.benchmark import run_benchmark
+
+    results = run_benchmark(
+        cv=cv,
+        folds=folds,
+        include_slow=include_slow,
+        update_readme=True,
+    )
+    print("\n-- Model benchmark results:")
+    print(results.to_string(index=False))
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -319,12 +332,13 @@ Examples:
   python main.py --mode predict --teams "Spain" "Brazil"
   python main.py --mode simulate          Re-run simulation only
   python main.py --mode dashboard         Regenerate dashboard
+  python main.py --mode benchmark         Benchmark base models and update README
         """,
     )
     
     parser.add_argument(
         "--mode",
-        choices=["full", "quick", "medium", "update", "predict", "simulate", "dashboard", "test"],
+        choices=["full", "quick", "medium", "update", "predict", "simulate", "dashboard", "benchmark", "test"],
         default="full",
         help="Pipeline mode to run",
     )
@@ -345,6 +359,23 @@ Examples:
         default=MC_DEFAULT_ITERATIONS,
         help=f"Number of Monte Carlo iterations (default: {MC_DEFAULT_ITERATIONS:,})",
     )
+    parser.add_argument(
+        "--benchmark-cv",
+        choices=["time", "kfold"],
+        default="time",
+        help="Cross-validation protocol for benchmark mode (default: time)",
+    )
+    parser.add_argument(
+        "--benchmark-folds",
+        type=int,
+        default=5,
+        help="Number of folds for benchmark mode (default: 5)",
+    )
+    parser.add_argument(
+        "--benchmark-fast",
+        action="store_true",
+        help="Skip CatBoost/XGBoost/LightGBM in benchmark mode",
+    )
     
     args = parser.parse_args()
     
@@ -361,6 +392,12 @@ Examples:
             run_simulate_only(iterations=args.iterations)
         elif args.mode == "dashboard":
             run_dashboard_only()
+        elif args.mode == "benchmark":
+            run_model_benchmark(
+                cv=args.benchmark_cv,
+                folds=args.benchmark_folds,
+                include_slow=not args.benchmark_fast,
+            )
     except KeyboardInterrupt:
         logger.info("\n[WARN] Pipeline interrupted by user")
         sys.exit(1)
